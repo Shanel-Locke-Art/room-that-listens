@@ -1,4 +1,5 @@
 // Fractal Room (Responsive + Focus Popups + Focus Zoom + Screensaver Fractal + Procedural Poem + Final Modal + TTS)
+// Focus images now use CONTAIN (fit inside) instead of COVER (fill/crop).
 
 const BASE_W = 960;
 const BASE_H = 540;
@@ -29,13 +30,13 @@ let focusImg = null;
 let paused = false;
 let ended = false;
 
-// NEW: final modal overlay
+// Final modal overlay
 let showFinalModal = false;
 let finalPoemText = "";
 
 // Focus zoom
-let focusZoom = 1.0;
-let focusZoomTarget = 1.0;
+let focusZoom = 0.95;
+let focusZoomTarget = 0.95;
 
 // Sound
 let audioArmed = false;
@@ -181,7 +182,6 @@ function stopTTS() {
 function speakText(text) {
   if (!ttsEnabled) return;
 
-  // Some browsers require user interaction before speaking.
   stopTTS();
 
   const utter = new SpeechSynthesisUtterance(text);
@@ -228,10 +228,10 @@ function setup() {
 }
 
 function draw() {
-  focusZoomTarget = constrain(focusZoomTarget, 1.0, 3.5);
-  focusZoom = lerp(focusZoom, focusZoomTarget, 0.10);
+  // Better zoom bounds now that we "contain" by default
+  focusZoomTarget = constrain(focusZoomTarget, 0.70, 3.20);
+  focusZoom = lerp(focusZoom, focusZoomTarget, 0.12);
 
-  // When final modal is up, freeze gameplay (but keep the shaders animating)
   const gameplayFrozen = showFinalModal || paused || ended;
 
   if (!gameplayFrozen && mode === "room") {
@@ -247,7 +247,6 @@ function draw() {
   if (mode === "room") drawRoomMode();
   else drawFocusMode();
 
-  // NEW: modal overlay last
   if (showFinalModal) drawFinalModal();
 
   updateUI();
@@ -314,7 +313,6 @@ function setLayout() {
   };
 
   player = {
-    // NEW: start center of room
     x: room.x + room.w * 0.50,
     y: room.y + room.h * 0.50,
     r: 10 * S,
@@ -382,18 +380,13 @@ function pickUniqueLine(bucket, salt) {
 
 function maybeAddConnector() {
   if (history.length < 2) return;
-
   const rand = mulberry32((runSeed ^ (history.length * 99991)) >>> 0);
-  if (rand() < 0.55) {
-    pushPoemLine(pickUniqueLine(CONNECTORS, 777));
-  }
+  if (rand() < 0.55) pushPoemLine(pickUniqueLine(CONNECTORS, 777));
 }
 
 function maybeAddGlitch() {
   const rand = mulberry32((runSeed ^ (poemLines.length * 424242)) >>> 0);
-  if (rand() < 0.30) {
-    pushPoemLine(pickUniqueLine(GLITCH_LINES, 31337));
-  }
+  if (rand() < 0.30) pushPoemLine(pickUniqueLine(GLITCH_LINES, 31337));
 }
 
 function pushPoemLine(line) {
@@ -407,22 +400,19 @@ function rebuildPoemDisplay() {
   const titleA = pickFrom(["A ROOM", "A PATTERN", "A SMALL LOOP", "A SOFT MACHINE"], rand);
   const titleB = pickFrom(["LISTENS", "SHIMMERS", "REPEATS", "FORGETS", "BREATHES"], rand);
 
-  const header = [
+  poemEl.textContent = [
     `${titleA} ${titleB}.`,
     "Touch objects. Let the order write you back.",
-    ""
-  ];
-
-  poemEl.textContent = header.concat(poemLines).join("\n");
+    "",
+    ...poemLines
+  ].join("\n");
 }
 
 function addInteractionPoetry(id) {
   history.push(id);
   maybeAddConnector();
-
   const bucket = LINES[id] || ["Something responds, quietly."];
   pushPoemLine(pickUniqueLine(bucket, idHash(id)));
-
   maybeAddGlitch();
 }
 
@@ -434,7 +424,6 @@ function shuffleInPlace(arr, randFn) {
 }
 
 function buildFinalPoemText() {
-  // Build a centered “final version” from your current poem display + final stanza
   const rand = mulberry32((runSeed ^ 0xABCDEF) >>> 0);
 
   const hasLight = history.includes("lamp");
@@ -448,17 +437,14 @@ function buildFinalPoemText() {
   const stanza = [a, b, c];
   shuffleInPlace(stanza, rand);
 
-  // Compose: header + poemLines + final stanza
   const baseText = poemEl.textContent || "";
-  const final = [
+  return [
     baseText,
     "",
     "FINAL:",
     ...stanza,
     "The door closes. The pattern keeps listening."
   ].join("\n");
-
-  return final;
 }
 
 /* -------------------------
@@ -466,7 +452,6 @@ function buildFinalPoemText() {
    ------------------------- */
 
 function lampAction() {
-  tokens.light++;
   addInteractionPoetry("lamp");
   fractal.baseWarp = clamp01(fractal.baseWarp + 0.12);
   fx.amount = clamp01(fx.amount + 0.08);
@@ -476,7 +461,6 @@ function lampAction() {
 }
 
 function mirrorAction() {
-  tokens.name++;
   addInteractionPoetry("mirror");
   fractal.baseCenter.x += random(-0.08, 0.08) / max(fractal.baseZoom, 0.001);
   fractal.baseCenter.y += random(-0.08, 0.08) / max(fractal.baseZoom, 0.001);
@@ -487,7 +471,6 @@ function mirrorAction() {
 }
 
 function deskAction() {
-  tokens.dust++;
   addInteractionPoetry("desk");
   fractal.iters = Math.min(420, fractal.iters + 35);
   sfxInteractLow();
@@ -497,14 +480,11 @@ function deskAction() {
 
 function doorAction() {
   addInteractionPoetry("door");
-
-  // Require at least 2 interactions total before allowing “final”
   if (history.length < 2) {
     sfxDenied();
     enterFocus("door");
     return;
   }
-
   sfxDoorRumble();
   enterFocus("door");
   ended = true;
@@ -512,7 +492,7 @@ function doorAction() {
 }
 
 /* -------------------------
-   RENDER
+   RENDER MODES
    ------------------------- */
 
 function drawRoomMode() {
@@ -527,8 +507,14 @@ function drawFocusMode() {
   background(6, 7, 12);
 
   imageLayer.clear();
-  if (focusImg) drawCover(imageLayer, focusImg, 0, 0, CW, CH, focusZoom);
-  else imageLayer.background(12);
+
+  // IMPORTANT CHANGE: CONTAIN instead of COVER
+  if (focusImg) {
+    // fit to 88% of screen, then apply focusZoom
+    drawContain(imageLayer, focusImg, 0, 0, CW, CH, focusZoom, 0.88);
+  } else {
+    imageLayer.background(12);
+  }
 
   filteredLayer.shader(filterShader);
   filterShader.setUniform("u_tex0", imageLayer);
@@ -555,9 +541,9 @@ function renderFractalLayer() {
   const deskUV = [stations[2].x / CW, stations[2].y / CH];
   const doorUV = [stations[3].x / CW, stations[3].y / CH];
 
-  const sLamp = tokens.light > 0 ? 1.0 : 0.35;
-  const sMirr = tokens.name > 0 ? 1.0 : 0.35;
-  const sDesk = tokens.dust > 0 ? 1.0 : 0.35;
+  const sLamp = history.includes("lamp") ? 1.0 : 0.35;
+  const sMirr = history.includes("mirror") ? 1.0 : 0.35;
+  const sDesk = history.includes("desk") ? 1.0 : 0.35;
   const sDoor = history.length >= 2 ? 1.0 : 0.35;
 
   const t = millis() / 1000;
@@ -582,6 +568,10 @@ function renderFractalLayer() {
   fractalLayer.shader(mandelShader);
   fractalLayer.rect(-CW / 2, -CH / 2, CW, CH);
 }
+
+/* -------------------------
+   ROOM DECOR
+   ------------------------- */
 
 function drawRoomFrame() {
   noFill();
@@ -648,24 +638,20 @@ function drawPlayer() {
 function drawFinalModal() {
   push();
 
-  // Backdrop
   noStroke();
   fill(0, 0, 0, 180);
   rect(0, 0, CW, CH);
 
-  // Panel dimensions
   const panelW = min(CW * 0.78, 760 * S + 200);
   const panelH = min(CH * 0.78, 520 * S + 160);
   const px = (CW - panelW) * 0.5;
   const py = (CH - panelH) * 0.5;
 
-  // Panel
   fill(12, 14, 25, 235);
   stroke(255, 255, 255, 60);
   strokeWeight(max(1.0, 1.5 * S));
   rect(px, py, panelW, panelH, 18 * S);
 
-  // Text
   noStroke();
   fill(255, 255, 255, 235);
   textAlign(LEFT, TOP);
@@ -684,12 +670,9 @@ function drawFinalModal() {
     : "Esc: Close  |  R: Restart   (Text-to-speech not supported in this browser)";
   text(hint, tx, ty + 26 * S);
 
-  // Body
   fill(255, 255, 255, 230);
   textSize(14 * S);
   const bodyY = ty + 54 * S;
-
-  // Wrap text manually by using p5's text() with a bounding box
   text(finalPoemText, tx, bodyY, panelW - pad * 2, panelH - (bodyY - py) - pad);
 
   pop();
@@ -814,12 +797,10 @@ function keyPressed() {
 
   if (key === "e" || key === "E") {
     if (mode === "focus") {
-      // If door ended the run, pressing E here generates and shows final modal
       if (focusId === "door" && history.length >= 2 && ended) {
         finalPoemText = buildFinalPoemText();
         showFinalModal = true;
         paused = true;
-        // Close focus so the modal is the star
         exitFocus();
         return false;
       }
@@ -870,13 +851,13 @@ function resetGame() {
   focusId = null;
   focusImg = null;
 
-  focusZoom = 1.0;
-  focusZoomTarget = 1.0;
+  // Start slightly zoomed-out so images don't feel huge
+  focusZoom = 0.95;
+  focusZoomTarget = 0.95;
 
   stepTimer = 0;
   lastNearId = null;
 
-  // Player starts centered (requested)
   player.x = room.x + room.w * 0.50;
   player.y = room.y + room.h * 0.50;
 
@@ -927,13 +908,25 @@ function zoomNudge(mult) {
 function setPrompt(t) { promptEl.textContent = t || ""; }
 function clamp01(v) { return Math.max(0, Math.min(1, v)); }
 
-function drawCover(g, img, x, y, w, h, zoom = 1.0) {
-  const ir = img.width / img.height;
-  const rr = w / h;
+/**
+ * CONTAIN: Fit image entirely inside the box (no cropping).
+ * padScale (0..1) gives breathing room. e.g. 0.88 = fit into 88% of the area.
+ */
+function drawContain(g, img, x, y, w, h, zoom = 1.0, padScale = 0.90) {
+  const availW = w * padScale;
+  const availH = h * padScale;
 
-  let dw = w, dh = h;
-  if (ir > rr) { dh = h; dw = h * ir; }
-  else { dw = w; dh = w / ir; }
+  const ir = img.width / img.height;
+  const rr = availW / availH;
+
+  let dw, dh;
+  if (ir > rr) {
+    dw = availW;
+    dh = availW / ir;
+  } else {
+    dh = availH;
+    dw = availH * ir;
+  }
 
   dw *= zoom;
   dh *= zoom;
@@ -954,8 +947,9 @@ function enterFocus(id) {
   focusId = id;
   focusImg = sprites[id] || null;
 
-  focusZoom = 1.0;
-  focusZoomTarget = 1.0;
+  // Start calm, not huge
+  focusZoom = 0.95;
+  focusZoomTarget = 0.95;
 
   sfxFocusOpen();
 }
@@ -965,175 +959,20 @@ function exitFocus() {
   focusId = null;
   focusImg = null;
 
-  focusZoom = 1.0;
-  focusZoomTarget = 1.0;
+  focusZoom = 0.95;
+  focusZoomTarget = 0.95;
 
   sfxFocusClose();
 }
 
 /* -------------------------
-   POEM INPUT
-   ------------------------- */
-
-function addInteractionPoetry(id) {
-  history.push(id);
-
-  if (history.length >= 2) maybeAddConnector();
-
-  const bucket = LINES[id] || ["Something responds, quietly."];
-  pushPoemLine(pickUniqueLine(bucket, idHash(id)));
-
-  maybeAddGlitch();
-}
-
-function maybeAddConnector() {
-  const rand = mulberry32((runSeed ^ (history.length * 99991)) >>> 0);
-  if (rand() < 0.55) pushPoemLine(pickUniqueLine(CONNECTORS, 777));
-}
-
-function maybeAddGlitch() {
-  const rand = mulberry32((runSeed ^ (poemLines.length * 424242)) >>> 0);
-  if (rand() < 0.30) pushPoemLine(pickUniqueLine(GLITCH_LINES, 31337));
-}
-
-function pushPoemLine(line) {
-  poemLines.push(line);
-  if (poemLines.length > POEM_MAX_LINES) poemLines.shift();
-  rebuildPoemDisplay();
-}
-
-function rebuildPoemDisplay() {
-  const rand = mulberry32(runSeed);
-  const titleA = pickFrom(["A ROOM", "A PATTERN", "A SMALL LOOP", "A SOFT MACHINE"], rand);
-  const titleB = pickFrom(["LISTENS", "SHIMMERS", "REPEATS", "FORGETS", "BREATHES"], rand);
-
-  const header = [
-    `${titleA} ${titleB}.`,
-    "Touch objects. Let the order write you back.",
-    ""
-  ];
-
-  poemEl.textContent = header.concat(poemLines).join("\n");
-}
-
-function buildFinalPoemText() {
-  const rand = mulberry32((runSeed ^ 0xABCDEF) >>> 0);
-
-  const hasLight = history.includes("lamp");
-  const hasName = history.includes("mirror");
-  const hasDust = history.includes("desk");
-
-  const a = hasLight ? pickFrom(ENDINGS.light, rand) : pickFrom(ENDINGS.none, rand);
-  const b = hasName ? pickFrom(ENDINGS.name, rand) : pickFrom(ENDINGS.none, rand);
-  const c = hasDust ? pickFrom(ENDINGS.dust, rand) : pickFrom(ENDINGS.none, rand);
-
-  const stanza = [a, b, c];
-  shuffleInPlace(stanza, rand);
-
-  const baseText = poemEl.textContent || "";
-  return [
-    baseText,
-    "",
-    "FINAL:",
-    ...stanza,
-    "The door closes. The pattern keeps listening."
-  ].join("\n");
-}
-
-function shuffleInPlace(arr, randFn) {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(randFn() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-}
-
-function pickUniqueLine(bucket, salt) {
-  const rand = mulberry32((runSeed ^ (history.length * 1337) ^ salt) >>> 0);
-  for (let k = 0; k < 10; k++) {
-    const candidate = pickFrom(bucket, rand);
-    if (!usedLines.has(candidate)) {
-      usedLines.add(candidate);
-      return candidate;
-    }
-  }
-  const fallback = pickFrom(bucket, rand);
-  usedLines.add(fallback);
-  return fallback;
-}
-
-function pickFrom(arr, randFn) {
-  return arr[Math.floor(randFn() * arr.length)];
-}
-
-function mulberry32(seed) {
-  return function() {
-    let t = seed += 0x6D2B79F5;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function idHash(id) {
-  let h = 2166136261 >>> 0;
-  for (let i = 0; i < id.length; i++) {
-    h ^= id.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
-
-/* -------------------------
-   STATION ACTIONS
-   ------------------------- */
-
-function lampAction() {
-  addInteractionPoetry("lamp");
-  fractal.baseWarp = clamp01(fractal.baseWarp + 0.12);
-  fx.amount = clamp01(fx.amount + 0.08);
-  zoomNudge(1.12);
-  sfxInteractHigh();
-  enterFocus("lamp");
-}
-
-function mirrorAction() {
-  addInteractionPoetry("mirror");
-  fractal.baseCenter.x += random(-0.08, 0.08) / max(fractal.baseZoom, 0.001);
-  fractal.baseCenter.y += random(-0.08, 0.08) / max(fractal.baseZoom, 0.001);
-  fx.amount = clamp01(fx.amount + 0.08);
-  zoomNudge(1.06);
-  sfxInteractMid();
-  enterFocus("mirror");
-}
-
-function deskAction() {
-  addInteractionPoetry("desk");
-  fractal.iters = Math.min(420, fractal.iters + 35);
-  sfxInteractLow();
-  zoomNudge(1.08);
-  enterFocus("desk");
-}
-
-function doorAction() {
-  addInteractionPoetry("door");
-
-  if (history.length < 2) {
-    sfxDenied();
-    enterFocus("door");
-    return;
-  }
-
-  sfxDoorRumble();
-  enterFocus("door");
-  ended = true;
-  paused = true;
-}
-
-/* -------------------------
-   FRACTAL DRAW
+   FRACTAL SHADER LAYER
    ------------------------- */
 
 function renderFractalLayer() {
+  // Ensure stations exist before first draw
+  if (!stations || stations.length < 4) return;
+
   const lampUV = [stations[0].x / CW, stations[0].y / CH];
   const mirrUV = [stations[1].x / CW, stations[1].y / CH];
   const deskUV = [stations[2].x / CW, stations[2].y / CH];
@@ -1248,3 +1087,9 @@ function sfxDoorRumble() { sfxNoise(180, 0.30, 0.10); sfxBlip(90, 0.001, 0.18, 0
 function sfxFocusOpen() { sfxBlip(980, 0.001, 0.08, 0.10); sfxNoise(1400, 0.10, 0.05); }
 function sfxFocusClose() { sfxBlip(360, 0.001, 0.08, 0.10); sfxNoise(700, 0.08, 0.05); }
 function sfxZoomTick(zoomingOut) { sfxBlip(zoomingOut ? 300 : 520, 0.001, 0.04, 0.06); }
+
+/* -------------------------
+   NOTE:
+   This sketch assumes your filter.frag + mandelbrot.frag are set up as previously.
+   mandelbrot.frag must include uniforms u_grow and u_palette.
+   ------------------------- */
