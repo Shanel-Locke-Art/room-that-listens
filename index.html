@@ -2,23 +2,65 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Fractal Room</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>The Poem Room</title>
   <link rel="stylesheet" href="style.css" />
-  <link rel="icon" href="data:,">
+  <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+  <link rel="icon" href="favicon.ico" />
 </head>
-<body>
-  <div id="hud" aria-label="HUD">
-    <div class="title">FRACTAL ROOM</div>
-    <div class="controls">
-      Move: WASD or Arrows · Interact: E · Focus Zoom: Mouse Wheel · Pause: Esc · Restart: R
+<header class="hud-top">
+  <div class="hud-left">
+    <div id="prompt" class="prompt">
+      Move through the room. Choose at least two objects, then the door. You and the computer will finish the poem together.
     </div>
-    <div id="prompt" class="prompt" aria-live="polite"></div>
-    <pre id="poem" class="poem" aria-label="Poem"></pre>
+    <pre id="poem" class="poem"></pre>
   </div>
 
-  <script src="p5.min.js"></script>
-  <script src="p5.sound.min.js"></script>
+  <div class="hud-right">
+    <div class="controls-box">
+      <div><b>Controls</b></div>
+      <div>Move: WASD or Arrows</div>
+      <div>Interact: E</div>
+      <div>Zoom: Mouse Wheel</div>
+      <div>Close: Esc</div>
+      <div>Speak Final: Space</div>
+      <div>Restart: R</div>
+    </div>
+  </div>
+</header>
+
+<footer class="meaning-bar">
+  <div class="meaning">
+    <div style="color:red; font-weight:bold;">How to Play</div>
+
+    <div style="margin-top:6px;">
+      This is a collaboration between you and the computer.
+      You do the noticing and choosing.
+      The computer does the remembering and remixing.
+    </div>
+
+    <div style="margin-top:8px;">
+      <b>Why a room?</b>
+      A room is a small universe with rules.
+      It is a container for randomness.
+      Each object is a different kind of language.
+    </div>
+
+    <div style="margin-top:8px;">
+      Interact with at least <b>two objects</b>.
+      Each one changes the pattern and the poem.
+      When you are ready, interact with the door.
+      The door seals your collaboration into a final version.
+    </div>
+  </div>
+</footer>
+
+  <!-- IMPORTANT: p5.sound must load after p5 -->
+  <script src="lib/p5.min.js"></script>
+  <script src="lib/p5.sound.min.js"></script>
   <script src="sketch.js"></script>
+  <script>
+  console.log("p5 present?", typeof window.p5, typeof window.random, typeof window.createCanvas);
+</script>
 </body>
 </html>
