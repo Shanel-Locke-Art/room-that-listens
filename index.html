@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Fractal Room</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <div id="hud" aria-label="HUD">
+    <div class="title">FRACTAL ROOM</div>
+    <div class="controls">
+      Move: WASD or Arrows · Interact: E · Focus Zoom: Mouse Wheel · Pause: Esc · Restart: R
+    </div>
+    <div id="prompt" class="prompt" aria-live="polite"></div>
+    <pre id="poem" class="poem" aria-label="Poem"></pre>
+  </div>
+
+  <script src="p5.min.js"></script>
+  <script src="p5.sound.min.js"></script>
+  <script src="sketch.js"></script>
+</body>
+</html>
