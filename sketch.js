@@ -1,27 +1,3 @@
-// ----- p5 global aliases (fixes random/createCanvas undefined) -----
-if (typeof window.createCanvas !== "function" && typeof window.p5 === "function") {
-  // Grab the active p5 instance if one exists, otherwise create one.
-  // This keeps your existing "global mode" style sketch working.
-  const inst = window._p5Instance || new window.p5(() => {});
-  window._p5Instance = inst;
-
-  // Map commonly used functions/properties to window
-  const fns = [
-    "createCanvas","resizeCanvas","createGraphics","loadImage","loadStrings","loadShader",
-    "background","image","tint","noTint","push","pop","translate","rotate","scale",
-    "stroke","noStroke","fill","noFill","strokeWeight","rect","circle","ellipse","line",
-    "text","textSize","textAlign","textFont","noSmooth","smooth","pixelDensity",
-    "random","noise","dist","constrain","lerp","map","sin","cos","tan","atan2","pow",
-    "min","max","floor","ceil","abs","sqrt","keyIsDown","keyPressed","mousePressed",
-    "mouseWheel","windowResized","width","height","frameCount","millis"
-  ];
-
-  for (const k of fns) {
-    if (typeof window[k] === "undefined" && typeof inst[k] !== "undefined") {
-      window[k] = inst[k].bind ? inst[k].bind(inst) : inst[k];
-    }
-  }
-}
 /* ==========================================================
    A SMALL LOOP LEAKS - sketch.js (FULL REWRITE, ERROR-SAFE)
 
@@ -55,12 +31,6 @@ if (typeof window.createCanvas !== "function" && typeof window.p5 === "function"
    CONFIG: paths (do not rename)
 ========================= */
 const PATHS = {
-  assets: {
-    lamp: "assets/lamp.png",
-    mirror: "assets/mirror.png",
-    desk: "assets/desk.png",
-    door: "assets/door.png"
-  },
   shaders: {
     vert: "shaders/passthrough.vert",
     mandel: "shaders/mandelbrot.frag",
@@ -99,6 +69,7 @@ let EXTRA_HIDDEN = 10;
 const CORE_IDS = ["lamp", "mirror", "desk", "door"];
 let sprites = {};
 let stations = [];
+let itemSpriteCache = new Map();
 
 /* =========================
    MODES
@@ -291,17 +262,58 @@ let music = {
 let lastNearId = null;
 let stepTimer = 0;
 
+// Pixel sprite cache for room items (no PNGs)
+
+function getItemSprite(spriteId) {
+  if (itemSpriteCache.has(spriteId)) return itemSpriteCache.get(spriteId);
+
+  const g = createGraphics(24, 24);
+  g.pixelDensity(1);
+  g.noSmooth();
+  g.clear();
+
+  // Deterministic per id so each item always looks the same
+  const r = mulberry32((idHash(spriteId) ^ 0xBEEF) >>> 0);
+
+  // faint noise
+  g.noStroke();
+  for (let y = 0; y < 24; y++) {
+    for (let x = 0; x < 24; x++) {
+      if (r() < 0.08) {
+        g.fill(0, 255, 170, 120);
+        g.rect(x, y, 1, 1);
+      }
+    }
+  }
+
+  // main block
+  g.fill(0, 255, 170, 230);
+  const w = 10 + Math.floor(r() * 6);
+  const h = 10 + Math.floor(r() * 6);
+  g.rect(12 - Math.floor(w / 2), 12 - Math.floor(h / 2), w, h, 2);
+
+  // accent core
+  g.fill(0, 0, 0, 160);
+  g.rect(10, 10, 4, 4);
+
+  // little highlight line
+  g.fill(180, 255, 220, 190);
+  g.rect(6, 7, 12, 1);
+
+  itemSpriteCache.set(spriteId, g);
+  return g;
+}
+
 /* ==========================================================
    PRELOAD
 ========================================================== */
-function preload() {
-  mandelShader = loadShader("shaders/passthrough.vert", "shaders/mandelbrot.frag");
-  filterShader = loadShader("shaders/passthrough.vert", "shaders/filter.frag");
+// Shader sources (loaded as text so we can compile them on the correct WEBGL buffers)
+let _vertSrcLines, _mandelFragLines, _filterFragLines;
 
-  sprites.lamp = loadImage("assets/lamp.png");
-  sprites.mirror = loadImage("assets/mirror.png");
-  sprites.desk = loadImage("assets/desk.png");
-  sprites.door = loadImage("assets/door.png");
+function preload() {
+  _vertSrcLines = loadStrings("./shaders/passthrough.vert");
+  _mandelFragLines = loadStrings("./shaders/mandelbrot.frag");
+  _filterFragLines = loadStrings("./shaders/filter.frag");
 }
 
 /* ==========================================================
@@ -312,8 +324,14 @@ function setup() {
   poemEl = document.getElementById("poem");
 
   computeCanvasSize();
+
   cnv = createCanvas(CW, CH);
-  pixelDensity(1);
+
+  const frame = document.getElementById("game-frame");
+  if (frame) cnv.parent(frame);
+
+  // Better sharpness on most screens
+  pixelDensity(window.devicePixelRatio || 1);
   noSmooth();
 
   // Make canvas focusable (prevents “keys not working” issues)
@@ -329,6 +347,13 @@ function setup() {
     }
   });
 
+  // IMPORTANT: create buffers AFTER the canvas exists and sizes are final
+  createBuffersAndShaders();
+
+  runSeed = (Date.now() ^ (Math.random() * 1e9)) >>> 0;
+  resetRun();
+
+  // IMPORTANT: create buffers AFTER the canvas exists and sizes are final
   createBuffersAndShaders();
 
   runSeed = (Date.now() ^ (Math.random() * 1e9)) >>> 0;
@@ -339,31 +364,35 @@ function windowResized() {
   computeCanvasSize();
   resizeCanvas(CW, CH);
   createBuffersAndShaders();
-  hiddenFocusCache.clear();
 }
 
 /* ==========================================================
    CANVAS SIZE (fills window, leaves DOM bars alone)
 ========================================================== */
 function computeCanvasSize() {
-  const margin = 14;
+  const frame = document.getElementById("game-frame");
 
-  // Try to respect optional UI bars if present
-  const topHUD = document.querySelector(".hud-top");
-  const bottomHUD = document.querySelector(".meaning-bar");
+  // fallback until DOM is ready
+  let w = Math.max(320, window.innerWidth - 40);
+  let h = Math.max(240, window.innerHeight - 220);
 
-  const topH = topHUD ? topHUD.offsetHeight : 0;
-  const botH = bottomHUD ? bottomHUD.offsetHeight : 0;
+  if (frame) {
+    const rect = frame.getBoundingClientRect();
+    const cs = getComputedStyle(frame);
 
-  const maxW = Math.max(320, windowWidth - margin * 2);
-  const maxH = Math.max(240, windowHeight - topH - botH - margin * 2);
+    const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+    const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
 
-  CW = Math.floor(maxW);
-  CH = Math.floor(maxH);
+    w = Math.max(320, Math.floor(rect.width - padX));
+    h = Math.max(240, Math.floor(rect.height - padY));
+  }
+
+  CW = w;
+  CH = h;
 
   S = Math.min(CW / BASE_W, CH / BASE_H);
 
-  INTERACT_RADIUS = 92 * S;      // BIGGER interactables
+  INTERACT_RADIUS = 92 * S;
   player.r = 10 * S;
   player.speed = 2.7 * S;
 }
@@ -372,14 +401,36 @@ function computeCanvasSize() {
    BUFFERS + SHADERS (fixes “different context” error)
 ========================================================== */
 function createBuffersAndShaders() {
+  // WEBGL buffers for shader passes
   fractalLayer = createGraphics(CW, CH, WEBGL);
   filteredLayer = createGraphics(CW, CH, WEBGL);
+
   fractalLayer.noStroke();
   filteredLayer.noStroke();
+  fractalLayer.noSmooth();
+  filteredLayer.noSmooth();
 
+  // 2D buffer for sprites/UI composites
   imageLayer = createGraphics(CW, CH);
   imageLayer.pixelDensity(1);
   imageLayer.noSmooth();
+
+  // Compile shaders on the SAME renderer contexts as the buffers they'll run on.
+  // This prevents: "shader attached to a different context" and GL undefined issues.
+  const vertSrc = Array.isArray(_vertSrcLines) ? _vertSrcLines.join("\n") : "";
+  const mandelFrag = Array.isArray(_mandelFragLines) ? _mandelFragLines.join("\n") : "";
+  const filterFrag = Array.isArray(_filterFragLines) ? _filterFragLines.join("\n") : "";
+
+  mandelShader = null;
+  filterShader = null;
+
+  if (vertSrc && mandelFrag && fractalLayer && typeof fractalLayer.createShader === "function") {
+    mandelShader = fractalLayer.createShader(vertSrc, mandelFrag);
+  }
+
+  if (vertSrc && filterFrag && filteredLayer && typeof filteredLayer.createShader === "function") {
+    filterShader = filteredLayer.createShader(vertSrc, filterFrag);
+  }
 }
 
 /* ==========================================================
@@ -488,6 +539,49 @@ function draw() {
 
   // HUD prompt text
   updateUI();
+}
+
+/* ==========================================================
+   SPRITE GENERATION
+========================================================== */
+function getItemSprite(spriteId) {
+  if (itemSpriteCache.has(spriteId)) return itemSpriteCache.get(spriteId);
+
+  // Create a pixel sprite (small, crisp)
+  const g = createGraphics(24, 24);
+  g.pixelDensity(1);
+  g.noSmooth();
+  g.clear();
+
+  // You already have makeSprite()/placeholder() style generators in your script.
+  // If you have those, use them instead of this default.
+  // Fallback: simple pixel icon based on hashed id.
+  const r = mulberry32((idHash(spriteId) ^ 0xBEEF) >>> 0);
+  g.noStroke();
+
+  // background pixels
+  for (let y = 0; y < 24; y++) {
+    for (let x = 0; x < 24; x++) {
+      if (r() < 0.08) {
+        g.fill(0, 255, 170, 140);
+        g.rect(x, y, 1, 1);
+      }
+    }
+  }
+
+  // main shape
+  g.fill(0, 255, 170, 220);
+  const cx = 12, cy = 12;
+  const w = 10 + Math.floor(r() * 6);
+  const h = 10 + Math.floor(r() * 6);
+  g.rect(cx - Math.floor(w/2), cy - Math.floor(h/2), w, h, 2);
+
+  // accent
+  g.fill(0, 0, 0, 170);
+  g.rect(cx - 3, cy - 3, 6, 6);
+
+  itemSpriteCache.set(spriteId, g);
+  return g;
 }
 
 /* ==========================================================
@@ -714,7 +808,6 @@ function drawStationsWorld() {
     const dToPlayer = dist(player.x, player.y, s.x, s.y);
     const active = near.s && near.s === s && near.d <= INTERACT_RADIUS;
 
-    // hidden unrevealed shows shimmer field only
     if (s.kind === "hidden" && !s.revealed) {
       drawHiddenShimmerField(s, dToPlayer);
       continue;
@@ -725,38 +818,29 @@ function drawStationsWorld() {
       continue;
     }
 
-    // Core plates
     stroke(active ? color(0, 255, 170, 240) : color(0, 255, 120, 140));
     strokeWeight(Math.max(2.0 * S, 2.8));
     fill(active ? color(0, 255, 140, 60) : color(0, 255, 120, 30));
 
-    const plate = 104 * S; // bigger
+    const plate = 104 * S;
     rect(s.x - plate / 2, s.y - plate / 2, plate, plate, 12 * S);
 
-    const img = sprites[s.id];
-    if (img) {
-      push();
-      imageMode(CENTER);
-      noSmooth();
-      const p = active ? (1.0 + 0.07 * sin(frameCount * 0.18)) : 1.0;
+    // Generated pixel sprite
+    const img = getItemSprite(s.id);
 
-      tint(180, 255, 210, 255);
+    push();
+    imageMode(CENTER);
+    noSmooth();
 
-      if (s.id === "door") {
-        image(img, s.x, s.y, 70 * S * p, 112 * S * p);
-      } else {
-        image(img, s.x, s.y, 88 * S * p, 88 * S * p);
-      }
+    const p = active ? (1.0 + 0.07 * sin(frameCount * 0.18)) : 1.0;
 
-      noTint();
-      pop();
+    if (s.id === "door") {
+      image(img, s.x, s.y, 70 * S * p, 112 * S * p);
     } else {
-      noStroke();
-      fill(0, 255, 170, 220);
-      textAlign(CENTER, CENTER);
-      textSize(12 * S);
-      text("MISSING " + s.id, s.x, s.y);
+      image(img, s.x, s.y, 88 * S * p, 88 * S * p);
     }
+
+    pop();
 
     noStroke();
     fill(active ? color(0, 255, 170, 255) : color(0, 255, 120, 210));
@@ -765,6 +849,7 @@ function drawStationsWorld() {
     text(s.label, s.x, s.y + 74 * S);
   }
 }
+    
 
 function drawPlayerWorld() {
   noStroke();
@@ -1017,7 +1102,7 @@ function coreAction(id) {
 
   if (id === "door") {
     if (!canEnterDoorState()) {
-      queuePoemLine("The door refuses. Bring it more lines first.");
+      queuePoemLine("The door refuses entry. Bring it more lines first.");
       sfxDenied();
       enterFocus("door");
       return;
@@ -1193,11 +1278,18 @@ function drawFocusMode() {
   if (focusImg) drawContain(imageLayer, focusImg, 0, 0, CW, CH, focusZoom, 0.88);
   else imageLayer.background(0, 18, 0);
 
+  // Put the sprite INSIDE the filtered window
+  imageLayer.push();
+  imageLayer.imageMode(CENTER);
+  imageLayer.noSmooth();
+  const test = getItemSprite(focusId || "door");
+  imageLayer.image(test, CW * 0.5, CH * 0.5, 220 * S, 220 * S);
+  imageLayer.pop();
+
   // Filtered composite
   if (filteredLayer && filterShader && fractalLayer) {
     filteredLayer.shader(filterShader);
 
-    // Most p5 examples use tex0/tex1, but support u_tex0/u_tex1 too
     safeUniform(filterShader, "u_tex0", imageLayer);
     safeUniform(filterShader, "u_tex1", fractalLayer);
     safeUniform(filterShader, "tex0", imageLayer);
@@ -1209,12 +1301,21 @@ function drawFocusMode() {
     safeUniform(filterShader, "u_fractMix", 0.94);
 
     filteredLayer.rect(-CW / 2, -CH / 2, CW, CH);
+
+    push();
+    resetMatrix();
+    imageMode(CORNER);
     image(filteredLayer, 0, 0);
+    pop();
   } else {
+    push();
+    resetMatrix();
+    imageMode(CORNER);
     image(imageLayer, 0, 0);
+    pop();
   }
 
-  // Focus UI
+  // Focus UI (drawn on top, not filtered)
   noStroke();
   fill(0, 255, 170, 210);
   textAlign(LEFT, TOP);
@@ -1227,7 +1328,7 @@ function drawFocusMode() {
 
   if (focusId === "door" && canFinalizePoem()) {
     fill(0, 255, 170, 230);
-    text("Press E to seal the final poem.", 16 * S, 54 * S);
+    text("Press E to seal the fate of the final poem.", 16 * S, 54 * S);
   }
 }
 
@@ -1385,10 +1486,15 @@ function pickUniqueLine(bucket, salt) {
   return fallback;
 }
 
-queuePoemLine(pickUniqueLine(SIGNAL_LINES, "SIGNAL"));
-if (random() < 0.45) queuePoemLine(pickUniqueLine(CONNECTORS, "CONNECT"));
-if (random() < 0.22) queuePoemLine(pickUniqueLine(MUTATION_LINES, "MUTATE"));
-if (random() < 0.25) queuePoemLine(pickUniqueLine(GLITCH_LINES, "GLITCH"));
+function primeMachineLines() {
+  const rand = mulberry32((runSeed ^ 0xA5B357) >>> 0);
+
+  primeMachineLines();
+
+  if (rand() < 0.45) queuePoemLine(pickUniqueLine(CONNECTORS, "CONNECT"));
+  if (rand() < 0.22) queuePoemLine(pickUniqueLine(MUTATION_LINES, "MUTATE"));
+  if (rand() < 0.25) queuePoemLine(pickUniqueLine(GLITCH_LINES, "GLITCH"));
+}
 
 /* ==========================================================
    TYPEWRITER (line hold + cursor)  [TIME-BASED]
@@ -1660,7 +1766,12 @@ function objectStrengths() {
 /* ==========================================================
    HIDDEN FOCUS CARD (close-up not blank)
 ========================================================== */
-function getHiddenFocusCard(glyphSeed, spriteId) {
+function getHiddenFocusCard(station) {
+
+  const spriteId = station?.id || "unknown";
+  const img = getItemSprite(spriteId);
+  const glyphSeed = station?.seed ?? idHash(spriteId);
+
   const key = glyphSeed + ":" + spriteId + ":" + CW + "x" + CH;
   if (hiddenFocusCache.has(key)) return hiddenFocusCache.get(key);
 
@@ -1699,32 +1810,36 @@ function getHiddenFocusCard(glyphSeed, spriteId) {
   g.text("A withheld word from the machine layer.", pad + 18 * S, pad + 46 * S);
 
   // center box with sprite
-  const img = sprites[spriteId];
-  const box = 240 * S;
-  const cx = CW * 0.5;
-  const cy = CH * 0.50;
+  if (!img) {
+  console.log("Missing sprite for:", spriteId);
+}
 
-  g.stroke(0, 255, 170, 120);
-  g.noFill();
-  g.rect(cx - box / 2, cy - box / 2, box, box, 10 * S);
+  const cx = pad + w * 0.5;
+  const cy = pad + h * 0.52;
+
+  g.push();
+  g.imageMode(CENTER);
+  g.noSmooth();
+
+  // subtle pulse without needing "active"
+  const pulse = 1.0 + 0.04 * Math.sin(frameCount * 0.14);
+
+  const sizeW = (spriteId === "door") ? (120 * S * pulse) : (150 * S * pulse);
+  const sizeH = (spriteId === "door") ? (180 * S * pulse) : sizeW;
 
   if (img) {
-    g.push();
-    g.imageMode(CENTER);
-    g.tint(180, 255, 210, 255);
-    g.image(img, cx, cy, box * 0.82, box * 0.82);
-    g.noTint();
-    g.pop();
+  g.image(img, cx, cy, sizeW, sizeH);
   } else {
     g.noStroke();
-    g.fill(0, 255, 170, 160);
+    g.fill(0,255,170);
     g.textAlign(CENTER, CENTER);
-    g.textSize(14 * S);
-    g.text("MISSING SPRITE", cx, cy);
-  }
+    g.text("NO SPRITE: " + spriteId, cx, cy);
+}
+  g.pop();
 
   // glyph at bottom
   const pts = makeGlyphPoints(glyphSeed, 10);
+
   g.push();
   g.translate(CW * 0.5, CH * 0.78);
 
@@ -1737,8 +1852,8 @@ function getHiddenFocusCard(glyphSeed, spriteId) {
   g.fill(0, 255, 170, 200);
   g.beginShape();
   for (let i = 0; i < pts.length; i++) {
-    const p = pts[i];
-    g.vertex(p.x * 3.0, p.y * 3.0);
+    const pt = pts[i];
+    g.vertex(pt.x * 3.0, pt.y * 3.0);
   }
   g.endShape(CLOSE);
 

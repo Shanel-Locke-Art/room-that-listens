@@ -1,107 +1,218 @@
-:root {
-  --crt-bg: #001a00;
-  --crt-panel: #002600;
-  --crt-border: #00ff66;
-  --crt-text: #33ff88;
-  --crt-dim: rgba(51, 255, 136, 0.7);
+:root{
+  --crt-bg:#001a00;
+  --crt-panel:#002600;
+  --crt-border:#00ff66;
+  --crt-text:#33ff88;
+  --crt-dim:rgba(51,255,136,.7);
 }
 
-html, body {
-  margin: 0;
-  padding: 0;
-  background: var(--crt-bg);
-  color: var(--crt-text);
-  font-family: 'VT323', monospace;
-  height: 100%;
-  overflow: hidden;
+html,body{
+  margin:0;
+  padding:0;
+  display: flex;
+  flex-direction: column;
+  background:var(--crt-bg);
+  color:var(--crt-text);
+  font-family:'VT323', monospace;
+  height:100%;
+  overflow:hidden; /* keep for game style, but we’ll manage fixed bars carefully */
+}
+
+html{
+  height:100%;
 }
 
 /* Subtle scanline effect */
-body::after {
-  content: "";
-  pointer-events: none;
-  position: fixed;
-  inset: 0;
-  background: repeating-linear-gradient(
+body::after{
+  content:"";
+  pointer-events:none;
+  position:fixed;
+  inset:0;
+  background:repeating-linear-gradient(
     to bottom,
-    rgba(0, 255, 0, 0.05) 0px,
-    rgba(0, 255, 0, 0.05) 1px,
+    rgba(0,255,0,.05) 0px,
+    rgba(0,255,0,.05) 1px,
     transparent 1px,
     transparent 3px
   );
-  mix-blend-mode: overlay;
+  mix-blend-mode:overlay;
 }
 
-/* Top layout */
-.hud-top {
-  display: grid;
-  grid-template-columns: 1fr 260px;
-  gap: 16px;
-  padding: 14px;
-  box-sizing: border-box;
+/* =========================
+   TOP HUD (compact, consistent)
+========================= */
+.hud-top{
+  box-sizing:border-box;
+  padding:10px 12px;
 }
 
-/* Prompt */
-.prompt {
-  font-size: 20px;
-  color: var(--crt-dim);
-  margin-bottom: 6px;
-  letter-spacing: 1px;
+/* Two-column layout */
+.hud-top{
+  display:grid;
+  grid-template-columns:1fr 260px;
+  gap:12px;
+  align-items:start;
 }
 
-/* Poem window */
-.poem {
-  margin: 0;
-  padding: 10px;
-  background: var(--crt-panel);
-  border: 2px solid var(--crt-border);
-  box-shadow: 0 0 8px var(--crt-border);
-  border-radius: 0;
-  max-height: 150px;
-  overflow: auto;
-  font-size: 18px;
-  line-height: 1.2;
-  white-space: pre-wrap;
+/* Prompt hero strip */
+.prompt{
+  border:2px solid var(--crt-border);
+  background:rgba(0,18,0,.92);
+  box-shadow:0 0 8px rgba(0,255,102,.25);
+
+  padding:10px 12px;
+  margin:0 0 10px 0;
+
+  font-size:18px;
+  line-height:1.15;
+  letter-spacing:.6px;
+  color:var(--crt-text);
+
+  white-space:pre-wrap;
+
+  /* keeps it from eating the screen */
+  max-height:56px;
+  overflow:hidden;
+}
+
+/* Urgent prompt style */
+#prompt.urgent{
+  color:#ff2a2a;
+  text-shadow:0 0 10px rgba(255,42,42,.55);
+}
+
+/* Poem log (HUD style, not a scroll box) */
+.poem{
+  margin:0;
+  padding:10px 12px;
+  background:rgba(0,18,0,.75);
+  border:2px solid var(--crt-border);
+  box-shadow:0 0 8px rgba(0,255,102,.25);
+
+  font-size:18px;
+  line-height:1.25;
+  letter-spacing:.6px;
+  white-space:pre-wrap;
+
+  /* critical: reduce vertical space */
+  max-height:120px;
+  overflow:hidden;
 }
 
 /* Controls box */
-.controls-box {
-  padding: 12px;
-  background: var(--crt-panel);
-  border: 2px solid var(--crt-border);
-  box-shadow: 0 0 8px var(--crt-border);
-  font-size: 18px;
-  line-height: 1.3;
-  color: var(--crt-text);
-  letter-spacing: 1px;
+.controls-box{
+  margin:0;
+  padding:10px 12px;
+  margin:0 0 10px 0;
+  background:rgba(0,18,0,.75);
+  border:2px solid var(--crt-border);
+  box-shadow:0 0 8px rgba(0,255,102,.25);
+
+  font-size:18px;
+  line-height:1.25;
+  letter-spacing:.6px;
+  color:var(--crt-text);
 }
 
-/* Bottom meaning bar */
-.meaning-bar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  width: 100%;
-  background: #001100;
-  border-top: 2px solid var(--crt-border);
-  padding: 16px 20px;
+/* =========================
+   BOTTOM “MEANING” BAR
+========================= */
+.meaning-bar{
+  margin:0;
+  padding:10px 12px;
+  margin:12px;
+  background:rgba(0,18,0,.75);  
+  border:2px solid var(--crt-border);
+  box-shadow:0 0 8px rgba(0,255,102,.25);
+
+  font-size:18px;
+  line-height:1.25;
+  letter-spacing:.6px;
+  color:var(--crt-text);
+}
+
+.meaning{
+  max-width: 90%;
+  font-size:18px; /* matches other text */
+  line-height:1.35;
+  letter-spacing:.6px;
+  color:var(--crt-text);
+}
+
+/* Mobile: stack the right column under */
+@media (max-width: 820px){
+  .hud-top{
+    grid-template-columns:1fr;
+  }
+  .controls-box{
+    margin-top:10px;
+  }
+  .poem{
+    max-height:110px;
+  }
+}
+
+/* =========================
+   GAME FRAME (black mat + green glow border)
+========================= */
+.game-wrap{
+  flex: 1;
+  min-height: 0;          /* critical: allows children to actually shrink/fit */
+  padding: 12px 14px;
   box-sizing: border-box;
-  box-shadow: 0 -2px 10px var(--crt-border);
 }
 
-.meaning {
-  max-width: 1000px;
-  font-size: 20px;
-  line-height: 1.4;
-  letter-spacing: 1px;
-  color: var(--crt-text);
+/* Outer mat */
+.game-frame{
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: #000;
+  border-radius: 14px;
+  box-sizing: border-box;
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.85);
+
+  width: 100%;
+  height: 100%;
 }
 
-#prompt.urgent {
-  color: #ff2a2a;
-  font-size: 22px;
-  font-weight: 800;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  text-shadow: 0 0 10px rgba(255, 42, 42, 0.55);
+/* Neon border ring */
+.game-frame::before{
+  content: "";
+  position: absolute;
+  inset: 8px;                    /* moves the ring inward */
+  border-radius: 10px;
+  border: 2px solid #00ff66;
+
+  /* glow */
+  box-shadow:
+    0 0 10px rgba(0,255,102,0.55),
+    0 0 24px rgba(0,255,102,0.28),
+    inset 0 0 10px rgba(0,255,102,0.22);
+
+  pointer-events: none;
+}
+
+/* Ensure the canvas sits above the ring and fits cleanly */
+.game-frame canvas{
+  display: block;
+  position: relative;
+  z-index: 1;
+  border-radius: 8px;
+
+  max-width: 100%;
+  max-height: 100%;
+}
+
+body{
+  margin:0;
+  padding:0;
+  background:var(--crt-bg);
+  color:var(--crt-text);
+  font-family:'VT323', monospace;
+
+  height:100vh;
+  overflow:hidden;
 }
