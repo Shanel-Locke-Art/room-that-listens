@@ -77,6 +77,7 @@ let itemSpriteCache = new Map();
 let mode = "world"; // world | focus
 let paused = false;
 let showFinalModal = false;
+let act = 1;
 
 let focusId = null;
 let focusImg = null;
@@ -264,43 +265,115 @@ let stepTimer = 0;
 
 // Pixel sprite cache for room items (no PNGs)
 
-function getItemSprite(spriteId) {
-  if (itemSpriteCache.has(spriteId)) return itemSpriteCache.get(spriteId);
+/* ==========================================================
+   SPRITE GENERATION (chunky pixel art + light animation)
+========================================================== */
+
+// Cache ONLY the base (static) sprite
+function getItemSpriteBase(id) {
+  if (itemSpriteCache.has(id)) return itemSpriteCache.get(id);
 
   const g = createGraphics(24, 24);
   g.pixelDensity(1);
   g.noSmooth();
   g.clear();
 
-  // Deterministic per id so each item always looks the same
-  const r = mulberry32((idHash(spriteId) ^ 0xBEEF) >>> 0);
+  const ON  = [0, 255, 170, 230];
+  const DIM = [0, 200, 120, 200];
 
-  // faint noise
-  g.noStroke();
-  for (let y = 0; y < 24; y++) {
-    for (let x = 0; x < 24; x++) {
-      if (r() < 0.08) {
-        g.fill(0, 255, 170, 120);
-        g.rect(x, y, 1, 1);
-      }
+  // helper: draw "chunky" pixels (2x2 blocks for thickness)
+  const px = (x, y, c = ON) => { g.noStroke(); g.fill(...c); g.rect(x, y, 2, 2); };
+
+  if (id === "lamp") {
+    // base
+    px(10, 18); px(12, 18); px(14, 18);
+    px(12, 16); px(12, 14);
+    // shade (big chunky triangle-ish)
+    for (let x = 6; x <= 16; x += 2) px(x, 10, DIM);
+    for (let x = 8; x <= 14; x += 2) px(x, 8, DIM);
+    px(10, 6, DIM); px(12, 6, DIM);
+    // bulb core
+    px(12, 12); px(10, 12, DIM); px(14, 12, DIM);
+  }
+  else if (id === "mirror") {
+    // frame
+    for (let x = 6; x <= 16; x += 2) { px(x, 6); px(x, 16); }
+    for (let y = 8; y <= 14; y += 2) { px(6, y); px(16, y); }
+    // glass fill (dim)
+    for (let y = 8; y <= 14; y += 2) for (let x = 8; x <= 14; x += 2) px(x, y, DIM);
+  }
+  else if (id === "desk") {
+    // tabletop
+    for (let x = 4; x <= 18; x += 2) px(x, 10);
+    for (let x = 6; x <= 16; x += 2) px(x, 12);
+    // legs
+    for (let y = 14; y <= 20; y += 2) { px(6, y, DIM); px(16, y, DIM); }
+  }
+  else if (id === "door") {
+    // door body
+    for (let y = 4; y <= 18; y += 2) {
+      px(10, y); px(12, y); px(14, y);
     }
+    // side posts
+    for (let y = 4; y <= 18; y += 2) { px(8, y, DIM); px(16, y, DIM); }
+    // knob
+    px(16, 12); // chunky knob
+  }
+  else {
+    // fallback block
+    for (let y = 8; y <= 14; y += 2) for (let x = 8; x <= 14; x += 2) px(x, y);
   }
 
-  // main block
-  g.fill(0, 255, 170, 230);
-  const w = 10 + Math.floor(r() * 6);
-  const h = 10 + Math.floor(r() * 6);
-  g.rect(12 - Math.floor(w / 2), 12 - Math.floor(h / 2), w, h, 2);
+  itemSpriteCache.set(id, g);
+  return g;
+}
 
-  // accent core
-  g.fill(0, 0, 0, 160);
-  g.rect(10, 10, 4, 4);
+// Per-frame "animated" sprite (do NOT cache)
+function getItemSpriteFrame(id) {
+  const base = getItemSpriteBase(id);
 
-  // little highlight line
-  g.fill(180, 255, 220, 190);
-  g.rect(6, 7, 12, 1);
+  const g = createGraphics(24, 24);
+  g.pixelDensity(1);
+  g.noSmooth();
+  g.clear();
+  g.image(base, 0, 0);
 
-  itemSpriteCache.set(spriteId, g);
+  const ON  = [0, 255, 170, 235];
+  const HOT = [180, 255, 220, 235];
+  const DIM = [0, 200, 120, 210];
+
+  const px = (x, y, c = ON) => { g.noStroke(); g.fill(...c); g.rect(x, y, 2, 2); };
+
+  // small, readable animation driven by frameCount
+  if (id === "lamp") {
+    // bulb flicker (toggle 2-3 pixels)
+    const t = frameCount % 12;
+    if (t < 6) { px(12, 12, HOT); px(10, 12, DIM); }
+    else       { px(12, 12, ON);  px(14, 12, HOT); }
+  }
+
+  if (id === "mirror") {
+    // shimmer line sweeps across glass
+    const step = (frameCount % 16);
+    const x = 8 + (step % 4) * 2;
+    const y = 8 + Math.floor(step / 4) * 2;
+    px(x, y, HOT);
+    px(x + 2, y + 2, DIM);
+  }
+
+  if (id === "desk") {
+    // scanline across tabletop
+    const y = (frameCount % 10 < 5) ? 10 : 12;
+    for (let x = 6; x <= 16; x += 2) px(x, y, DIM);
+  }
+
+  if (id === "door") {
+    // breathing edge + knob blink
+    const blink = (frameCount % 20 < 3);
+    if (blink) px(16, 12, HOT); // knob pulse
+    if (frameCount % 18 < 9) { px(8, 8, DIM); px(16, 8, DIM); } // edge shimmer
+  }
+
   return g;
 }
 
@@ -826,7 +899,7 @@ function drawStationsWorld() {
     rect(s.x - plate / 2, s.y - plate / 2, plate, plate, 12 * S);
 
     // Generated pixel sprite
-    const img = getItemSprite(s.id);
+    const img = getItemSpriteFrame(s.id);
 
     push();
     imageMode(CENTER);
@@ -1101,17 +1174,31 @@ function coreAction(id) {
   addInteractionPoetry(id);
 
   if (id === "door") {
+
+  // ACT 1 → TRANSITION TO ACT 2
+  if (act === 1 && canEnterDoorState()) {
+    act = 2;
+    mutateRoom();
+    queuePoemLine("The room shifts. It was listening.");
+    sfxDoorRumble();
+    return;
+  }
+
+  // ACT 2 → FINALIZE
+  if (act === 2) {
     if (!canEnterDoorState()) {
-      queuePoemLine("The door refuses entry. Bring it more lines first.");
+      queuePoemLine("The door wants more from you.");
       sfxDenied();
-      enterFocus("door");
       return;
     }
+
     doorTrail.t = Math.max(doorTrail.t, Math.floor(190 + signal * 35));
     sfxDoorRumble();
     enterFocus("door");
     return;
   }
+
+}
 
   // Fractal reacts by object type
   if (id === "lamp") {
@@ -1148,8 +1235,8 @@ function enterFocus(id) {
   mode = "focus";
   focusId = id;
   focusImg = sprites[id] || null;
-  focusZoom = 0.95;
-  focusZoomTarget = 0.95;
+  focusZoom = 1.35;
+  focusZoomTarget = 1.35;
   sfxFocusOpen();
 }
 
@@ -1241,11 +1328,16 @@ function mousePressed() {
 }
 
 function mouseWheel(event) {
-  if (mode !== "focus") return;
+  if (mode !== "focus") return false;
+
+  if (cnv && cnv.elt) cnv.elt.focus();
+  if (event && event.preventDefault) event.preventDefault();
+
   const delta = event.deltaY;
   const step = (Math.abs(delta) > 40) ? 0.12 : 0.06;
   if (delta > 0) focusZoomTarget -= step;
   else focusZoomTarget += step;
+
   sfxZoomTick(delta > 0);
   return false;
 }
@@ -1282,8 +1374,9 @@ function drawFocusMode() {
   imageLayer.push();
   imageLayer.imageMode(CENTER);
   imageLayer.noSmooth();
-  const test = getItemSprite(focusId || "door");
-  imageLayer.image(test, CW * 0.5, CH * 0.5, 220 * S, 220 * S);
+  const test = getItemSpriteFrame(focusId || "door");
+  const spr = 360 * S * focusZoom;        // sprite size now follows zoom
+  imageLayer.image(test, CW * 0.5, CH * 0.5, spr, spr);
   imageLayer.pop();
 
   // Filtered composite
@@ -2179,6 +2272,25 @@ function drawCover(g, img, x, y, w, h) {
 
   g.imageMode(CORNER);
   g.image(img, dx, dy, dw, dh);
+}
+
+function mutateRoom() {
+
+  // Make fractal more unstable
+  fractal.baseWarp += 0.2;
+  fractal.iters += 60;
+
+  // Increase signal pressure
+  signal = Math.min(signal + 1, 6);
+
+  // Slightly move objects
+  for (const s of stations) {
+    if (s.kind === "core" && s.id !== "door") {
+      s.x += random(-120, 120);
+      s.y += random(-120, 120);
+    }
+  }
+
 }
 
 /* ==========================================================
