@@ -108,7 +108,7 @@ body::after{
   border:2px solid var(--crt-border);
   box-shadow:0 0 8px rgba(0,255,102,.25);
 
-  font-size:18px;
+  font-size:19px;
   line-height:1.25;
   letter-spacing:.6px;
   color:var(--crt-text);
