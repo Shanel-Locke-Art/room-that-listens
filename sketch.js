@@ -50,7 +50,7 @@ let poemEl = null;
 ========================= */
 let world = { w: 2800, h: 1900, pad: 180 };
 let camera = { x: 0, y: 0 };
-let player = { x: 0, y: 0, r: 10, speed: 2.6 };
+let player = { x: 0, y: 0, r: 10, speed: 2.6, vx: 0, vy: 0, speed01: 0, energy: 0 };
 
 let INTERACT_RADIUS = 86;
 let REVEAL_RADIUS_MULT = 2.8;
@@ -60,6 +60,7 @@ let EXTRA_HIDDEN = 10;
    STATIONS (objects)
 ========================= */
 const CORE_IDS = ["lamp", "mirror", "desk", "door"];
+const SIG_TYPES = ["KEY","EYE","KNOT","SPARK","WAVE","MASK"];
 let stations = [];
 
 /* =========================
@@ -382,6 +383,29 @@ function createBuffersAndShaders() {
   }
 }
 
+function nearestStationWorld(preferHidden = false) {
+  let best = null;
+  let bestD = 1e9;
+
+  for (const s of stations) {
+    if (s.hidden && !s.revealed) continue; // unrevealed SIG can't be interacted with
+    if (preferHidden && s.kind !== "hidden") continue;
+
+    const d = dist(player.x, player.y, s.x, s.y);
+    if (d < bestD) { bestD = d; best = s; }
+  }
+  return { s: best, d: bestD };
+}
+
+function pickInteractTarget() {
+  // Prefer SIG if one is in range
+  const h = nearestStationWorld(true);
+  if (h.s && h.d <= INTERACT_RADIUS) return h;
+
+  // Otherwise nearest interactable
+  return nearestStationWorld(false);
+}
+
 /* ==========================================================
    RESET RUN
 ========================================================== */
@@ -515,6 +539,8 @@ function generateStations() {
     const glyphSeed = (runSeed ^ (i * 99991) ^ (pos.x * 13) ^ (pos.y * 7)) >>> 0;
     const spriteId = spritePool[i % spritePool.length];
 
+    const sigType = SIG_TYPES[(glyphSeed ^ (i * 131)) % SIG_TYPES.length];
+
     stations.push({
       kind: "hidden",
       id: "hidden_" + i,
@@ -525,7 +551,8 @@ function generateStations() {
       revealRadius: INTERACT_RADIUS * REVEAL_RADIUS_MULT,
       glyphSeed,
       spriteId,
-      fn: () => hiddenAction(glyphSeed, spriteId)
+      sigType,
+      fn: () => hiddenAction(glyphSeed, spriteId, sigType)
     });
   }
 }
@@ -564,8 +591,24 @@ function updateMovement() {
     vx = (vx / mag) * player.speed;
     vy = (vy / mag) * player.speed;
   } else {
-    vx = 0; vy = 0;
+    vx = 0;
+    vy = 0;
   }
+
+  // ------------------------------------
+  // NEW: store real movement for music
+  // ------------------------------------
+  player.vx = vx;
+  player.vy = vy;
+
+  const speedNow = Math.hypot(vx, vy);
+  const speed01 = constrain(speedNow / Math.max(player.speed, 0.0001), 0, 1);
+
+  const d = Math.abs(speed01 - (player.speed01 || 0));
+  player.speed01 = speed01;
+
+  // energy spikes on starts/stops/changes
+  player.energy = lerp(player.energy || 0, constrain(speed01 * 0.7 + d * 2.2, 0, 1), 0.18);
 
   player.x += vx;
   player.y += vy;
@@ -686,32 +729,6 @@ function drawWorldBorder() {
   stroke(0, 255, 120, 160);
   strokeWeight(Math.max(2.0 * S, 2));
   rect(12 * S, 12 * S, world.w - 24 * S, world.h - 24 * S, 18 * S);
-}
-
-function nearestStationWorld(preferHidden = false) {
-  let best = null;
-  let bestD = 1e9;
-
-  for (const s of stations) {
-    if (s.hidden && !s.revealed) continue;
-
-    // Optional: if we are preferring hidden, skip core
-    if (preferHidden && s.kind !== "hidden") continue;
-
-    const d = dist(player.x, player.y, s.x, s.y);
-    if (d < bestD) { bestD = d; best = s; }
-  }
-  return { s: best, d: bestD };
-}
-
-function pickInteractTarget() {
-  // 1) If any SIG is close enough, grab the nearest SIG first
-  const h = nearestStationWorld(true);
-  if (h.s && h.d <= INTERACT_RADIUS) return h;
-
-  // 2) Otherwise default to nearest thing
-  const any = nearestStationWorld(false);
-  return any;
 }
 
 function drawStationsWorld() {
@@ -851,13 +868,69 @@ function drawHiddenGlyph(s, active) {
   }
   endShape(CLOSE);
 
-  // Distinct symbol: eye slash
+  // Distinct SIG type symbol
   stroke(0, 255, 170, 180 * flicker);
-  strokeWeight(2.0 * S);
-  line(-20 * S, 0, 20 * S, 0);
-  line(-14 * S, -10 * S, 14 * S, 10 * S);
+  strokeWeight(2.2 * S);
+  noFill();
 
-  noStroke();
+  const w = 26 * S;
+  const h = 18 * S;
+  const bob = (active ? 2.5 : 1.3) * S * sin(t * 5.0 + s.glyphSeed * 0.002);
+
+  switch (s.sigType || "EYE") {
+    case "KEY":
+      circle(0, -4 * S + bob, 14 * S);
+      line(7 * S, -4 * S + bob, 18 * S, -4 * S + bob);
+      line(14 * S, -7 * S + bob, 14 * S, -1 * S + bob);
+      break;
+
+    case "EYE":
+      beginShape();
+      vertex(-w, 0 + bob);
+      quadraticVertex(0, -h + bob, w, 0 + bob);
+      quadraticVertex(0, h + bob, -w, 0 + bob);
+      endShape();
+      noStroke();
+      fill(0, 255, 170, 180 * flicker);
+      circle(0, 0 + bob, 6 * S);
+      break;
+
+    case "KNOT":
+      stroke(0, 255, 170, 200 * flicker);
+      noFill();
+      beginShape();
+      for (let a = 0; a <= TAU; a += TAU / 24) {
+        const r = 14 * S + 3 * S * sin(2 * a);
+        vertex(cos(a) * r, sin(a) * (10 * S) + bob);
+      }
+      endShape();
+      break;
+
+    case "SPARK":
+      for (let i = 0; i < 8; i++) {
+        const ang = i * (TAU / 8);
+        const rr = (i % 2 === 0 ? 18 : 10) * S;
+        line(0, 0 + bob, cos(ang) * rr, sin(ang) * rr + bob);
+      }
+      break;
+
+    case "WAVE":
+      beginShape();
+      for (let x = -20; x <= 20; x += 4) {
+        const y = sin((x * 0.18) + t * 3.0) * 6 * S + bob;
+        vertex(x * S, y);
+      }
+      endShape();
+      break;
+
+    case "MASK":
+      rect(-16 * S, -10 * S + bob, 32 * S, 20 * S, 6 * S);
+      line(-6 * S, -2 * S + bob, -2 * S, -2 * S + bob);
+      line(2 * S, -2 * S + bob, 6 * S, -2 * S + bob);
+      break;
+  }
+
+noStroke();
   fill(0, 255, 170, active ? 220 : 170);
   textAlign(CENTER, CENTER);
   textSize(12 * S);
@@ -1112,6 +1185,35 @@ function coreAction(id) {
   }
 
   enterFocus(id);
+}
+
+
+function hiddenAction(glyphSeed, spriteId, sigType) {
+  gainSignal("open");
+  if (act === 2) act2SigCollected++;
+
+  queuePoemLine(pickUniqueLine(LINES.hidden, 0x1DD33));
+  sfxInteractMid();
+
+  focusId = "hidden";
+  focusImg = getHiddenFocusCard(glyphSeed, spriteId, sigType);
+  mode = "focus";
+  focusZoom = 1.35;
+  focusZoomTarget = 1.35;
+}
+
+function mutateRoom() {
+  fractal.baseWarp += 0.2;
+  fractal.iters += 60;
+
+  signal = Math.min(signal + 1, 6);
+
+  for (const s of stations) {
+    if (s.kind === "core" && s.id !== "door") {
+      s.x += random(-120, 120);
+      s.y += random(-120, 120);
+    }
+  }
 }
 
 function enterFocus(id) {
@@ -1559,42 +1661,38 @@ function updateUI() {
   const nonDoorCount = history.filter(h => h !== "door").length;
   const need = Math.max(0, 2 - nonDoorCount);
 
-  const near = nearestStationWorld();
+  // UI only: determine if something is in range (do NOT call near.s.fn here)
+  const near = pickInteractTarget();
   const inRange = near.s && near.d <= INTERACT_RADIUS;
 
-  if (inRange && near.s) {
-    if (near.s.kind === "core" && near.s.id === "door" && need > 0 && act === 1) {
-      promptEl.textContent = actTag + "The door wants more input. Find " + need + " more object(s).";
+  // Act 2 task prompt has priority in world mode
+  if (act === 2 && !history.includes("door")) {
+    const needSig = Math.max(0, 2 - act2SigCollected);
+    const cal = act2Calibrated ? "DONE" : "Lamp, Mirror, Desk";
+    promptEl.textContent = actTag + "ACT 2 TASKS: SIG +" + needSig + " and CALIBRATE: " + cal + ".";
+    if (!act2Calibrated || needSig > 0) promptEl.classList.add("urgent");
+    return;
+  }
+
+  if (inRange) {
+    if (act === 1 && need > 0 && near.s && near.s.id === "door") {
+      promptEl.textContent = actTag + "The door wants more. Find " + need + " more object(s).";
       promptEl.classList.add("urgent");
     } else {
       promptEl.textContent = actTag + "Press E to interact. Q pings the door.";
     }
-
-    if (near.s.id && near.s.id !== lastNearId) {
-      sfxProximity();
-      musicAccent();
-    }
-    lastNearId = near.s.id;
     return;
   }
 
-  lastNearId = null;
-
   if (act === 1 && need > 0) {
-    promptEl.textContent = actTag + "EXPLORE. FIND " + need + " MORE OBJECT" + (need > 1 ? "S." : ".") + " Hidden SIG nodes deepen SIGNAL.";
+    promptEl.textContent =
+      actTag + "EXPLORE. FIND " + need + " MORE OBJECT" + (need > 1 ? "S." : ".") + " Hidden SIG nodes deepen SIGNAL.";
     promptEl.classList.add("urgent");
   } else if (!history.includes("door")) {
     promptEl.textContent = actTag + "You have enough lines. Find the door. Press Q to ping it.";
   } else {
     promptEl.textContent = actTag + "Return to the door. View it and press E to seal.";
   }
-
-  if (act === 2 && !history.includes("door")) {
-  const needSig = Math.max(0, 2 - act2SigCollected);
-  const cal = act2Calibrated ? "DONE" : "Lamp, Mirror, Desk";
-  promptEl.textContent = actTag + "ACT 2 TASKS: SIG +" + needSig + " and CALIBRATE: " + cal + ".";
-  return;
-}
 }
 
 /* ==========================================================
@@ -1644,7 +1742,7 @@ function renderFractalLayer() {
 /* ==========================================================
    HIDDEN FOCUS CARD
 ========================================================== */
-function getHiddenFocusCard(glyphSeed, spriteId) {
+function getHiddenFocusCard(glyphSeed, spriteId, sigType) {
   const key = glyphSeed + ":" + spriteId + ":" + CW + "x" + CH;
   if (hiddenFocusCache.has(key)) return hiddenFocusCache.get(key);
 
@@ -1876,66 +1974,110 @@ function sfxFocusClose() { sfxBlip(520, 0.001, 0.05, 0.14); }
 function sfxZoomTick(down) { sfxBlip(down ? 420 : 560, 0.001, 0.02, 0.10); }
 
 function initProceduralMusic() {
+  // Instruments (no noise)
   music.lead = new p5.Oscillator("triangle");
-  music.bass = new p5.Oscillator("sine");
-  music.hat = new p5.Noise("white");
+  music.bass = new p5.Oscillator("square");
+  music.hatOsc = new p5.Oscillator("square"); // clicky hat
 
-  music.lead.start(); music.bass.start(); music.hat.start();
-  music.lead.amp(0); music.bass.amp(0); music.hat.amp(0);
+  music.lead.start(); music.bass.start(); music.hatOsc.start();
+  music.lead.amp(0);  music.bass.amp(0);  music.hatOsc.amp(0);
 
+  // FX chain
   music.filter = new p5.LowPass();
   music.reverb = new p5.Reverb();
-  music.delay = new p5.Delay();
+  music.delay  = new p5.Delay();
 
+  // Route into filter
   music.lead.disconnect();
   music.bass.disconnect();
-  music.hat.disconnect();
+  music.hatOsc.disconnect();
 
   music.lead.connect(music.filter);
   music.bass.connect(music.filter);
-  music.hat.connect(music.filter);
+  music.hatOsc.connect(music.filter);
 
-  music.reverb.process(music.filter, 2.2, 1.2);
-  music.delay.process(music.filter, 0.20, 0.25, 2000);
+  music.reverb.process(music.filter, 1.2, 1.0);
+  music.delay.process(music.filter, 0.12, 0.22, 1600);
 
-  music.filter.freq(1200);
-  music.filter.res(8);
+  music.filter.freq(1500);
+  music.filter.res(9);
+
+  // Timing + pep
+  music.lastStepAt = 0;
+  music.step = 0;
+  music.bpmBase = 112;
+  music.bpm = 112;
+
+  music.speedSmoothed = 0;
+  music._energySmoothed = 0;
 }
 
 function updateProceduralMusic() {
   if (!audioArmed || !musicOn) return;
 
-  const vx = (keyIsDown(RIGHT_ARROW) || keyIsDown(68) ? 1 : 0) - (keyIsDown(LEFT_ARROW) || keyIsDown(65) ? 1 : 0);
-  const vy = (keyIsDown(DOWN_ARROW) || keyIsDown(83) ? 1 : 0) - (keyIsDown(UP_ARROW) || keyIsDown(87) ? 1 : 0);
-  const speed = Math.min(1, Math.hypot(vx, vy));
-  music.speedSmoothed = lerp(music.speedSmoothed, speed, 0.06);
+  const targetSpeed  = (mode === "world" && !paused && !showFinalModal) ? (player.speed01 || 0) : 0;
+  const targetEnergy = (mode === "world" && !paused && !showFinalModal) ? (player.energy  || 0) : 0;
+
+  music.speedSmoothed = lerp(music.speedSmoothed, targetSpeed, 0.10);
+  music._energySmoothed = lerp(music._energySmoothed || 0, targetEnergy, 0.12);
+
+  const groove = music.speedSmoothed || 0;
+  const energy = music._energySmoothed || 0;
+  const drive  = constrain(groove * 0.85 + energy * 0.55, 0, 1);
+
+  // Faster when moving
+  music.bpm = lerp(music.bpmBase, music.bpmBase + 38, drive);
 
   const t = millis();
   const stepMs = 60000 / music.bpm;
   if (t - music.lastStepAt < stepMs) return;
   music.lastStepAt = t;
-  music.step++;
 
-  const scale = [0, 2, 3, 5, 7, 10]; // minor-ish
+  music.step = (music.step + 1) % 16;
+
+  // Notes
+  const scale = [0, 2, 4, 7, 9, 12]; // more upbeat than minor-ish
   const root = 220;
-  const degree = scale[music.step % scale.length];
-  const leadF = root * Math.pow(2, degree / 12);
 
-  const bassDeg = scale[(music.step + 3) % scale.length];
+  const leadDeg = scale[music.step % scale.length];
+  const leadF = root * Math.pow(2, leadDeg / 12);
+
+  const bassPattern = [0,0,0,0, 4,4,0,0, 7,7,4,4, 0,0,9,9];
+  const bassDeg = bassPattern[music.step];
   const bassF = (root / 2) * Math.pow(2, bassDeg / 12);
 
-  const leadAmp = 0.06 + 0.10 * music.speedSmoothed;
-  const bassAmp = 0.05 + 0.08 * music.speedSmoothed;
-  const hatAmp = (music.step % 2 === 0) ? 0.05 : 0.02;
+  // Amps
+  const leadAmp = 0.030 + 0.12 * drive;
+  const bassAmp = 0.025 + 0.11 * drive;
 
   music.lead.freq(leadF);
   music.bass.freq(bassF);
 
-  music.lead.amp(leadAmp, 0.02);
-  music.bass.amp(bassAmp, 0.02);
-  music.hat.amp(hatAmp, 0.01);
+  music.lead.amp(leadAmp, 0.03);
+  music.bass.amp(bassAmp, 0.03);
 
-  music.filter.freq(900 + 700 * music.speedSmoothed + 120 * signal);
+  // Hat "click" (no noise): short ticks with accents
+  let hatAmp = 0;
+
+  // offbeats
+  if (music.step % 2 === 1) hatAmp += 0.08;
+
+  // extra pep when moving
+  if (drive > 0.55 && (music.step === 6 || music.step === 14)) hatAmp += 0.07;
+
+  // backbeat accent
+  if (music.step === 4 || music.step === 12) hatAmp += 0.10 * (0.4 + 0.6 * energy);
+
+  // set hat frequency to feel like a tight click
+  const hatF = 1800 + 1200 * drive;
+  music.hatOsc.freq(hatF);
+
+  // super fast decay via amp ramp
+  music.hatOsc.amp(hatAmp, 0.005);
+  music.hatOsc.amp(0, 0.03);
+
+  // Filter brightness follows movement + signal
+  music.filter.freq(lerp(1400, 4200, drive) + 120 * signal);
 }
 
 function musicAccent() {

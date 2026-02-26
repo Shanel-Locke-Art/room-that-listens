@@ -1,34 +1,27 @@
 /* ==========================================================
-   A SMALL LOOP LEAKS - sketch.js (FULL REWRITE, ERROR-SAFE)
+   A SMALL LOOP LEAKS - sketch.js (CLEAN REWRITE)
 
-   Goals (everything working, no missing pieces):
-   - p5.js + LOCAL LIBRARIES (downloaded): p5.min.js + p5.sound.min.js
-   - Mandelbrot fractal shader background (animated, screensaver grow + palette cycle)
-   - Optional object-reactive field (u_obj1..u_obj4, u_objStrength) if your shader supports it
-   - Filter shader overlay for focus/final views (distorts base image w/ fractal)
-   - Larger game area (auto camera scroll) + random placement + hidden SIG nodes
-   - Hidden SIG nodes have DISTINCT SYMBOL (procedural glyph), reveal by proximity
-   - Interactables are BIGGER
-   - Audio: louder SFX + procedural reactive background music (movement reactive)
-   - Poetry: randomized, depends on order; typewriter single-line hold + blinking cursor
-   - Final poem: centered modal, DOOR image as background, ESC closes (no freeze)
-   - Player starts center
-   - Q ping door, arrow hint for door if eligible (>=2 objects)
-   - Text-to-speech (Space in final modal), if browser supports it
+   This rewrite removes duplicate function declarations and fixes:
+   - act variable declared once
+   - focus view zoom applies to the inspected sprite
+   - mouseWheel zoom works reliably in focus mode
+   - hiddenAction + getHiddenFocusCard signatures match
+   - setup() initialization only runs once
+   - chunky pixel-art sprites with light animation (procedural)
 
-   IMPORTANT FOLDER STRUCTURE (do not rename):
+   Folder structure (do not rename):
    /index.html
    /style.css
    /sketch.js
-   /assets/lamp.png mirror.png desk.png door.png   (your sprite images)
+   /lib/p5.min.js
+   /lib/p5.sound.min.js
    /shaders/passthrough.vert
    /shaders/mandelbrot.frag
    /shaders/filter.frag
-
 ========================================================== */
 
 /* =========================
-   CONFIG: paths (do not rename)
+   CONFIG: paths
 ========================= */
 const PATHS = {
   shaders: {
@@ -47,7 +40,7 @@ let CW = BASE_W, CH = BASE_H, S = 1;
 let cnv;
 
 /* =========================
-   DOM UI (optional)
+   DOM UI
 ========================= */
 let promptEl = null;
 let poemEl = null;
@@ -57,7 +50,7 @@ let poemEl = null;
 ========================= */
 let world = { w: 2800, h: 1900, pad: 180 };
 let camera = { x: 0, y: 0 };
-let player = { x: 0, y: 0, r: 10, speed: 2.6 };
+let player = { x: 0, y: 0, r: 10, speed: 2.6, vx: 0, vy: 0, speed01: 0, energy: 0 };
 
 let INTERACT_RADIUS = 86;
 let REVEAL_RADIUS_MULT = 2.8;
@@ -67,44 +60,50 @@ let EXTRA_HIDDEN = 10;
    STATIONS (objects)
 ========================= */
 const CORE_IDS = ["lamp", "mirror", "desk", "door"];
-let sprites = {};
 let stations = [];
-let itemSpriteCache = new Map();
 
 /* =========================
    MODES
 ========================= */
-let mode = "world"; // world | focus
+let mode = "world";        // world | focus
 let paused = false;
 let showFinalModal = false;
-let act = 1;
 
 let focusId = null;
 let focusImg = null;
-let focusZoom = 0.95;
-let focusZoomTarget = 0.95;
+let focusZoom = 1.35;
+let focusZoomTarget = 1.35;
+
+/* =========================
+   ACTS
+========================= */
+let act = 1;                // 1 = The Room, 2 = The Machine Notices You
+let actBannerFrames = 0;    // overlay countdown frames
+
+// Act 2 objective tracking
+let act2SigCollected = 0;
+let act2Calibrated = false;
+let act2Seq = []; // last few core interactions (excluding door)
 
 /* =========================
    SIGNAL + DOOR GUIDANCE
 ========================= */
 let signal = 0;
 let pulse = { active: false, r: 0, speed: 18, hit: false };
-let doorTrail = { t: 0, maxT: 260 };                 // 1 = The Room, 2 = The Machine Notices You
-let actBannerFrames = 0;     // counts down to show big “ACT 2” overlay
+let doorTrail = { t: 0, maxT: 260 };
 
 /* =========================
    SHADERS / BUFFERS
 ========================= */
-let fractalLayer = null;    // WEBGL
-let filteredLayer = null;   // WEBGL
-let imageLayer = null;      // 2D for focus/final base
+let fractalLayer = null;     // WEBGL
+let filteredLayer = null;    // WEBGL
+let imageLayer = null;       // 2D base for filter
 
 let mandelShader = null;
 let filterShader = null;
 
-let vertSrc = "";
-let mandelFrag = "";
-let filterFrag = "";
+// Shader sources
+let _vertSrcLines, _mandelFragLines, _filterFragLines;
 
 /* =========================
    FRACTAL STATE
@@ -132,7 +131,7 @@ let fractAnim = {
 };
 
 /* =========================
-   POETRY (randomized)
+   POETRY
 ========================= */
 let history = [];
 let usedLines = new Set();
@@ -204,7 +203,7 @@ const MUTATION_LINES = [
 ];
 
 /* =========================
-   TYPEWRITER UI (single-line hold + cursor)
+   TYPEWRITER UI
 ========================= */
 let poemQueue = [];
 let typingLine = "";
@@ -215,13 +214,18 @@ let heldLine = "";
 let cursorOn = true;
 let cursorTimer = 0;
 
+const TYPE_DELAY_MS = 120;
+const TYPE_TICK_EVERY = 4;
+const CURSOR_BLINK_FRAMES = 26;
+let lastTypeTime = 0;
+
 /* =========================
    FINAL POEM
 ========================= */
 let finalPoemText = "";
 
 /* =========================
-   HIDDEN FOCUS CARDS CACHE
+   HIDDEN FOCUS CACHE
 ========================= */
 let hiddenFocusCache = new Map();
 
@@ -262,132 +266,19 @@ let music = {
 };
 
 let lastNearId = null;
-let stepTimer = 0;
 
-// Pixel sprite cache for room items (no PNGs)
-
-/* ==========================================================
-   SPRITE GENERATION (chunky pixel art + light animation)
-========================================================== */
-
-// Cache ONLY the base (static) sprite
-function getItemSpriteBase(id) {
-  if (itemSpriteCache.has(id)) return itemSpriteCache.get(id);
-
-  const g = createGraphics(24, 24);
-  g.pixelDensity(1);
-  g.noSmooth();
-  g.clear();
-
-  const ON  = [0, 255, 170, 230];
-  const DIM = [0, 200, 120, 200];
-
-  // helper: draw "chunky" pixels (2x2 blocks for thickness)
-  const px = (x, y, c = ON) => { g.noStroke(); g.fill(...c); g.rect(x, y, 2, 2); };
-
-  if (id === "lamp") {
-    // base
-    px(10, 18); px(12, 18); px(14, 18);
-    px(12, 16); px(12, 14);
-    // shade (big chunky triangle-ish)
-    for (let x = 6; x <= 16; x += 2) px(x, 10, DIM);
-    for (let x = 8; x <= 14; x += 2) px(x, 8, DIM);
-    px(10, 6, DIM); px(12, 6, DIM);
-    // bulb core
-    px(12, 12); px(10, 12, DIM); px(14, 12, DIM);
-  }
-  else if (id === "mirror") {
-    // frame
-    for (let x = 6; x <= 16; x += 2) { px(x, 6); px(x, 16); }
-    for (let y = 8; y <= 14; y += 2) { px(6, y); px(16, y); }
-    // glass fill (dim)
-    for (let y = 8; y <= 14; y += 2) for (let x = 8; x <= 14; x += 2) px(x, y, DIM);
-  }
-  else if (id === "desk") {
-    // tabletop
-    for (let x = 4; x <= 18; x += 2) px(x, 10);
-    for (let x = 6; x <= 16; x += 2) px(x, 12);
-    // legs
-    for (let y = 14; y <= 20; y += 2) { px(6, y, DIM); px(16, y, DIM); }
-  }
-  else if (id === "door") {
-    // door body
-    for (let y = 4; y <= 18; y += 2) {
-      px(10, y); px(12, y); px(14, y);
-    }
-    // side posts
-    for (let y = 4; y <= 18; y += 2) { px(8, y, DIM); px(16, y, DIM); }
-    // knob
-    px(16, 12); // chunky knob
-  }
-  else {
-    // fallback block
-    for (let y = 8; y <= 14; y += 2) for (let x = 8; x <= 14; x += 2) px(x, y);
-  }
-
-  itemSpriteCache.set(id, g);
-  return g;
-}
-
-// Per-frame "animated" sprite (do NOT cache)
-function getItemSpriteFrame(id) {
-  const base = getItemSpriteBase(id);
-
-  const g = createGraphics(24, 24);
-  g.pixelDensity(1);
-  g.noSmooth();
-  g.clear();
-  g.image(base, 0, 0);
-
-  const ON  = [0, 255, 170, 235];
-  const HOT = [180, 255, 220, 235];
-  const DIM = [0, 200, 120, 210];
-
-  const px = (x, y, c = ON) => { g.noStroke(); g.fill(...c); g.rect(x, y, 2, 2); };
-
-  // small, readable animation driven by frameCount
-  if (id === "lamp") {
-    // bulb flicker (toggle 2-3 pixels)
-    const t = frameCount % 12;
-    if (t < 6) { px(12, 12, HOT); px(10, 12, DIM); }
-    else       { px(12, 12, ON);  px(14, 12, HOT); }
-  }
-
-  if (id === "mirror") {
-    // shimmer line sweeps across glass
-    const step = (frameCount % 16);
-    const x = 8 + (step % 4) * 2;
-    const y = 8 + Math.floor(step / 4) * 2;
-    px(x, y, HOT);
-    px(x + 2, y + 2, DIM);
-  }
-
-  if (id === "desk") {
-    // scanline across tabletop
-    const y = (frameCount % 10 < 5) ? 10 : 12;
-    for (let x = 6; x <= 16; x += 2) px(x, y, DIM);
-  }
-
-  if (id === "door") {
-    // breathing edge + knob blink
-    const blink = (frameCount % 20 < 3);
-    if (blink) px(16, 12, HOT); // knob pulse
-    if (frameCount % 18 < 9) { px(8, 8, DIM); px(16, 8, DIM); } // edge shimmer
-  }
-
-  return g;
-}
+/* =========================
+   SPRITES (procedural)
+========================= */
+let itemSpriteCache = new Map(); // base sprites only, not animated frames
 
 /* ==========================================================
    PRELOAD
 ========================================================== */
-// Shader sources (loaded as text so we can compile them on the correct WEBGL buffers)
-let _vertSrcLines, _mandelFragLines, _filterFragLines;
-
 function preload() {
-  _vertSrcLines = loadStrings("./shaders/passthrough.vert");
-  _mandelFragLines = loadStrings("./shaders/mandelbrot.frag");
-  _filterFragLines = loadStrings("./shaders/filter.frag");
+  _vertSrcLines = loadStrings("./" + PATHS.shaders.vert);
+  _mandelFragLines = loadStrings("./" + PATHS.shaders.mandel);
+  _filterFragLines = loadStrings("./" + PATHS.shaders.filter);
 }
 
 /* ==========================================================
@@ -400,20 +291,18 @@ function setup() {
   computeCanvasSize();
 
   cnv = createCanvas(CW, CH);
-
   const frame = document.getElementById("game-frame");
   if (frame) cnv.parent(frame);
 
-  // Better sharpness on most screens
   pixelDensity(window.devicePixelRatio || 1);
   noSmooth();
 
-  // Make canvas focusable (prevents “keys not working” issues)
+  // Make canvas focusable
   cnv.elt.setAttribute("tabindex", "0");
   cnv.elt.style.outline = "none";
   cnv.elt.focus();
 
-  // Ensure ESC closes modal even if focus weirdness
+  // ESC closes modal even if focus shifts
   window.addEventListener("keydown", (e) => {
     if (showFinalModal && e.key === "Escape") {
       e.preventDefault();
@@ -421,13 +310,6 @@ function setup() {
     }
   });
 
-  // IMPORTANT: create buffers AFTER the canvas exists and sizes are final
-  createBuffersAndShaders();
-
-  runSeed = (Date.now() ^ (Math.random() * 1e9)) >>> 0;
-  resetRun();
-
-  // IMPORTANT: create buffers AFTER the canvas exists and sizes are final
   createBuffersAndShaders();
 
   runSeed = (Date.now() ^ (Math.random() * 1e9)) >>> 0;
@@ -441,22 +323,19 @@ function windowResized() {
 }
 
 /* ==========================================================
-   CANVAS SIZE (fills window, leaves DOM bars alone)
+   CANVAS SIZE
 ========================================================== */
 function computeCanvasSize() {
   const frame = document.getElementById("game-frame");
 
-  // fallback until DOM is ready
   let w = Math.max(320, window.innerWidth - 40);
   let h = Math.max(240, window.innerHeight - 220);
 
   if (frame) {
     const rect = frame.getBoundingClientRect();
     const cs = getComputedStyle(frame);
-
     const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
     const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
-
     w = Math.max(320, Math.floor(rect.width - padX));
     h = Math.max(240, Math.floor(rect.height - padY));
   }
@@ -472,10 +351,9 @@ function computeCanvasSize() {
 }
 
 /* ==========================================================
-   BUFFERS + SHADERS (fixes “different context” error)
+   BUFFERS + SHADERS
 ========================================================== */
 function createBuffersAndShaders() {
-  // WEBGL buffers for shader passes
   fractalLayer = createGraphics(CW, CH, WEBGL);
   filteredLayer = createGraphics(CW, CH, WEBGL);
 
@@ -484,13 +362,10 @@ function createBuffersAndShaders() {
   fractalLayer.noSmooth();
   filteredLayer.noSmooth();
 
-  // 2D buffer for sprites/UI composites
   imageLayer = createGraphics(CW, CH);
   imageLayer.pixelDensity(1);
   imageLayer.noSmooth();
 
-  // Compile shaders on the SAME renderer contexts as the buffers they'll run on.
-  // This prevents: "shader attached to a different context" and GL undefined issues.
   const vertSrc = Array.isArray(_vertSrcLines) ? _vertSrcLines.join("\n") : "";
   const mandelFrag = Array.isArray(_mandelFragLines) ? _mandelFragLines.join("\n") : "";
   const filterFrag = Array.isArray(_filterFragLines) ? _filterFragLines.join("\n") : "";
@@ -507,6 +382,29 @@ function createBuffersAndShaders() {
   }
 }
 
+function nearestStationWorld(preferHidden = false) {
+  let best = null;
+  let bestD = 1e9;
+
+  for (const s of stations) {
+    if (s.hidden && !s.revealed) continue; // unrevealed SIG can't be interacted with
+    if (preferHidden && s.kind !== "hidden") continue;
+
+    const d = dist(player.x, player.y, s.x, s.y);
+    if (d < bestD) { bestD = d; best = s; }
+  }
+  return { s: best, d: bestD };
+}
+
+function pickInteractTarget() {
+  // Prefer SIG if one is in range
+  const h = nearestStationWorld(true);
+  if (h.s && h.d <= INTERACT_RADIUS) return h;
+
+  // Otherwise nearest interactable
+  return nearestStationWorld(false);
+}
+
 /* ==========================================================
    RESET RUN
 ========================================================== */
@@ -520,8 +418,11 @@ function resetRun() {
   mode = "world";
   focusId = null;
   focusImg = null;
-  focusZoom = 0.95;
-  focusZoomTarget = 0.95;
+  focusZoom = 1.35;
+  focusZoomTarget = 1.35;
+
+  act = 1;
+  actBannerFrames = 0;
 
   history = [];
   usedLines = new Set();
@@ -536,12 +437,12 @@ function resetRun() {
   pulse.hit = false;
   pulse.speed = 18;
 
-  // Randomize world dimensions (big)
+  // Randomize world dimensions
   world.w = Math.floor(2400 + random(0, 1400));
   world.h = Math.floor(1700 + random(0, 1000));
   world.pad = Math.floor(170 + random(0, 130));
 
-  // Start player in center
+  // Start player center
   player.x = world.w * 0.5;
   player.y = world.h * 0.5;
   camera.x = player.x;
@@ -562,12 +463,12 @@ function resetRun() {
   // Stations
   generateStations();
 
-  // Instructions (meaningful + old-school vibe)
+  // Instructions
   queuePoemLine("A room shimmers in green phosphor.");
   queuePoemLine("You and the machine co-write a poem by moving through it.");
   queuePoemLine("Interact with 2 objects, then the door. The order becomes the poem.");
   queuePoemLine("Hidden SIG nodes are withheld words. Find them to deepen SIGNAL.");
-  queuePoemLine("Controls: WASD/Arrows move. E interact. Q ping door. ESC close/pause.");
+  queuePoemLine("Controls: WASD or arrows move. E interact. Q ping door. ESC close. R restart.");
 
   if (cnv && cnv.elt) cnv.elt.focus();
 }
@@ -576,92 +477,34 @@ function resetRun() {
    MAIN LOOP
 ========================================================== */
 function draw() {
-  // Always update UI typing + HUD, even if paused/modal
   updateTypewriter();
   rebuildPoemDisplay();
 
-  // Always animate the pulse (door ping) and music/fractal so the world feels alive
   updatePulse();
   updateProceduralMusic();
   updateFractalAnimation();
 
   if (actBannerFrames > 0) actBannerFrames--;
 
-  // Only update player/world simulation when actually playing the world
   const inWorldPlay = (!showFinalModal && !paused && mode === "world");
   if (inWorldPlay) {
     updateMovement();
     updateFootsteps();
   }
 
-  // Camera should still ease even in focus/modal so transitions feel smooth
   updateCamera();
 
-  // Render fractal layer (safe guard)
-  if (mandelShader && fractalLayer) {
-    renderFractalLayer();
-  }
+  if (mandelShader && fractalLayer) renderFractalLayer();
 
-  // Draw current view
-  if (showFinalModal) {
-    // Final poem overlay takes priority visually
-    // (It will draw its own background + filter)
-    drawFinalModal();
-  } else if (mode === "world") {
-    drawWorldMode();
-  } else {
-    drawFocusMode();
-  }
+  if (showFinalModal) drawFinalModal();
+  else if (mode === "world") drawWorldMode();
+  else drawFocusMode();
 
-  // HUD prompt text
   updateUI();
 }
 
 /* ==========================================================
-   SPRITE GENERATION
-========================================================== */
-function getItemSprite(spriteId) {
-  if (itemSpriteCache.has(spriteId)) return itemSpriteCache.get(spriteId);
-
-  // Create a pixel sprite (small, crisp)
-  const g = createGraphics(24, 24);
-  g.pixelDensity(1);
-  g.noSmooth();
-  g.clear();
-
-  // You already have makeSprite()/placeholder() style generators in your script.
-  // If you have those, use them instead of this default.
-  // Fallback: simple pixel icon based on hashed id.
-  const r = mulberry32((idHash(spriteId) ^ 0xBEEF) >>> 0);
-  g.noStroke();
-
-  // background pixels
-  for (let y = 0; y < 24; y++) {
-    for (let x = 0; x < 24; x++) {
-      if (r() < 0.08) {
-        g.fill(0, 255, 170, 140);
-        g.rect(x, y, 1, 1);
-      }
-    }
-  }
-
-  // main shape
-  g.fill(0, 255, 170, 220);
-  const cx = 12, cy = 12;
-  const w = 10 + Math.floor(r() * 6);
-  const h = 10 + Math.floor(r() * 6);
-  g.rect(cx - Math.floor(w/2), cy - Math.floor(h/2), w, h, 2);
-
-  // accent
-  g.fill(0, 0, 0, 170);
-  g.rect(cx - 3, cy - 3, 6, 6);
-
-  itemSpriteCache.set(spriteId, g);
-  return g;
-}
-
-/* ==========================================================
-   WORLD GENERATION
+   STATION GENERATION
 ========================================================== */
 function generateStations() {
   stations = [];
@@ -670,7 +513,6 @@ function generateStations() {
   const minDist = 310 * S;
   const avoidPlayerDist = 460 * S;
 
-  // Place core objects
   for (const id of CORE_IDS) {
     const pos = pickPositionWithSpacing(minDist, avoidPlayerDist, placed);
     placed.push(pos);
@@ -688,7 +530,6 @@ function generateStations() {
     });
   }
 
-  // Hidden SIG nodes (procedural symbol)
   const spritePool = ["lamp", "mirror", "desk"];
   for (let i = 0; i < EXTRA_HIDDEN; i++) {
     const pos = pickPositionWithSpacing(minDist * 0.72, avoidPlayerDist * 0.28, placed);
@@ -746,21 +587,34 @@ function updateMovement() {
     vx = (vx / mag) * player.speed;
     vy = (vy / mag) * player.speed;
   } else {
-    vx = 0; vy = 0;
+    vx = 0;
+    vy = 0;
   }
+
+  // ------------------------------------
+  // NEW: store real movement for music
+  // ------------------------------------
+  player.vx = vx;
+  player.vy = vy;
+
+  const speedNow = Math.hypot(vx, vy);
+  const speed01 = constrain(speedNow / Math.max(player.speed, 0.0001), 0, 1);
+
+  const d = Math.abs(speed01 - (player.speed01 || 0));
+  player.speed01 = speed01;
+
+  // energy spikes on starts/stops/changes
+  player.energy = lerp(player.energy || 0, constrain(speed01 * 0.7 + d * 2.2, 0, 1), 0.18);
 
   player.x += vx;
   player.y += vy;
 
-  // keep in world
   player.x = constrain(player.x, player.r, world.w - player.r);
   player.y = constrain(player.y, player.r, world.h - player.r);
 
-  // Movement nudges fractal baseline a tiny bit
   fractal.baseCenter.x += vx * 0.00055 / Math.max(fractal.baseZoom, 0.001);
   fractal.baseCenter.y += vy * 0.00055 / Math.max(fractal.baseZoom, 0.001);
 
-  // Reveal hidden by proximity
   for (const s of stations) {
     if (!s.hidden || s.revealed) continue;
 
@@ -799,14 +653,15 @@ function isOnScreen(wx, wy, pad = 120) {
 function drawWorldMode() {
   drawCRTBackground();
 
-  // Fractal as glowing background layer
   if (fractalLayer) {
     if (act === 2) {
-      const a = 220 + 20 * sin(frameCount * 0.06);   // subtle pulse
-      tint(180, 255, 255, a);                        // brighter, more electric
+      const a = 220 + 20 * sin(frameCount * 0.06);
+      tint(180, 255, 255, a);
     } else {
       tint(120, 255, 170, 210);
     }
+    image(fractalLayer, 0, 0);
+    noTint();
   }
 
   push();
@@ -823,35 +678,13 @@ function drawWorldMode() {
   drawDoorTrail();
   drawCompassArrow();
   drawSignalMeter();
-}
-
-function drawActBanner() {
-  if (actBannerFrames <= 0) return;
-
-  const t = actBannerFrames / 180; // assumes we set it to 180
-  const alpha = 255 * constrain(t, 0, 1);
-
-  // darken screen slightly
-  noStroke();
-  fill(0, 0, 0, 90);
-  rect(0, 0, CW, CH);
-
-  // banner text
-  textAlign(CENTER, CENTER);
-  fill(0, 255, 170, alpha);
-  textSize(42 * S);
-  text("ACT 2", CW * 0.5, CH * 0.42);
-
-  fill(0, 255, 170, alpha * 0.75);
-  textSize(18 * S);
-  text("THE MACHINE NOTICES YOU", CW * 0.5, CH * 0.52);
+  drawActBanner();
 }
 
 function drawCRTBackground() {
-  if (act === 2) background(0, 10, 18);  // colder, machine-awake
+  if (act === 2) background(0, 10, 18);
   else background(0, 18, 0);
 
-  // radial glow
   noStroke();
   for (let r = Math.max(CW, CH) * 1.2; r > 0; r -= 34) {
     const a = map(r, 0, Math.max(CW, CH) * 1.2, 26, 0);
@@ -862,7 +695,12 @@ function drawCRTBackground() {
   fill(0, 0, 0, 70);
   rect(0, 0, CW, CH);
 
-  // scanlines
+  if (act === 2) {
+    noStroke();
+    fill(0, 0, 0, 35);
+    rect(0, 0, CW, CH);
+  }
+
   for (let y = 0; y < CH; y += 3) {
     stroke(0, 255, 120, (act === 2) ? 18 : 10);
     line(0, y, CW, y);
@@ -889,20 +727,34 @@ function drawWorldBorder() {
   rect(12 * S, 12 * S, world.w - 24 * S, world.h - 24 * S, 18 * S);
 }
 
-function nearestStationWorld() {
+function nearestStationWorld(preferHidden = false) {
   let best = null;
   let bestD = 1e9;
 
   for (const s of stations) {
     if (s.hidden && !s.revealed) continue;
+
+    // Optional: if we are preferring hidden, skip core
+    if (preferHidden && s.kind !== "hidden") continue;
+
     const d = dist(player.x, player.y, s.x, s.y);
     if (d < bestD) { bestD = d; best = s; }
   }
   return { s: best, d: bestD };
 }
 
+function pickInteractTarget() {
+  // 1) If any SIG is close enough, grab the nearest SIG first
+  const h = nearestStationWorld(true);
+  if (h.s && h.d <= INTERACT_RADIUS) return h;
+
+  // 2) Otherwise default to nearest thing
+  const any = nearestStationWorld(false);
+  return any;
+}
+
 function drawStationsWorld() {
-  const near = nearestStationWorld();
+  const near = pickInteractTarget();
 
   for (const s of stations) {
     if (!isOnScreen(s.x, s.y, 260)) continue;
@@ -927,7 +779,6 @@ function drawStationsWorld() {
     const plate = 104 * S;
     rect(s.x - plate / 2, s.y - plate / 2, plate, plate, 12 * S);
 
-    // Generated pixel sprite
     const img = getItemSpriteFrame(s.id);
 
     push();
@@ -936,11 +787,8 @@ function drawStationsWorld() {
 
     const p = active ? (1.0 + 0.07 * sin(frameCount * 0.18)) : 1.0;
 
-    if (s.id === "door") {
-      image(img, s.x, s.y, 70 * S * p, 112 * S * p);
-    } else {
-      image(img, s.x, s.y, 88 * S * p, 88 * S * p);
-    }
+    if (s.id === "door") image(img, s.x, s.y, 70 * S * p, 112 * S * p);
+    else image(img, s.x, s.y, 88 * S * p, 88 * S * p);
 
     pop();
 
@@ -950,9 +798,7 @@ function drawStationsWorld() {
     textSize(14 * S);
     text(s.label, s.x, s.y + 74 * S);
   }
-  drawActBanner();
 }
-    
 
 function drawPlayerWorld() {
   noStroke();
@@ -1044,7 +890,7 @@ function drawHiddenGlyph(s, active) {
   }
   endShape(CLOSE);
 
-  // Distinct symbol: an "eye" slash
+  // Distinct symbol: eye slash
   stroke(0, 255, 170, 180 * flicker);
   strokeWeight(2.0 * S);
   line(-20 * S, 0, 20 * S, 0);
@@ -1057,6 +903,29 @@ function drawHiddenGlyph(s, active) {
   text("SIG", 0, 60 * S);
 
   pop();
+}
+
+/* ==========================================================
+   ACT BANNER
+========================================================== */
+function drawActBanner() {
+  if (actBannerFrames <= 0) return;
+
+  const t = actBannerFrames / 180;
+  const alpha = 255 * constrain(t, 0, 1);
+
+  noStroke();
+  fill(0, 0, 0, 90);
+  rect(0, 0, CW, CH);
+
+  textAlign(CENTER, CENTER);
+  fill(0, 255, 170, alpha);
+  textSize(42 * S);
+  text("ACT 2", CW * 0.5, CH * 0.42);
+
+  fill(0, 255, 170, alpha * 0.75);
+  textSize(18 * S);
+  text("THE MACHINE NOTICES YOU", CW * 0.5, CH * 0.52);
 }
 
 /* ==========================================================
@@ -1135,11 +1004,8 @@ function drawCompassArrow() {
   const door = getDoor();
   if (!door) return;
 
-  // easiest way to find the door: arrow appears once eligible
   const eligible = canEnterDoorState() || signal >= 2;
-
   const target = eligible ? door : nearestNonDoorCore();
-
   if (!target) return;
   if (isOnScreen(target.x, target.y, 0)) return;
 
@@ -1197,40 +1063,65 @@ function drawSignalMeter() {
   text("SIGNAL " + signal + "/6", x + 6 * S, y + h * 0.5);
 }
 
-/* ==========================================================
-   INTERACTIONS
-========================================================== */
 function coreAction(id) {
   addInteractionPoetry(id);
 
+  // -------------------------
+  // DOOR
+  // -------------------------
   if (id === "door") {
 
-  // ACT 1 → TRANSITION TO ACT 2
-  if (act === 1 && canEnterDoorState()) {
-    act = 2;
-    mutateRoom();
-    queuePoemLine("The room shifts. It was listening.");
-    sfxDoorRumble();
-    return;
-  }
+    // ACT 1: door transitions to ACT 2
+    if (act === 1) {
+      if (!canEnterDoorState()) {
+        queuePoemLine("The door refuses entry. Bring it more lines first.");
+        sfxDenied();
+        enterFocus("door");
+        return;
+      }
 
-  // ACT 2 → FINALIZE
-  if (act === 2) {
-    if (!canEnterDoorState()) {
-      queuePoemLine("The door wants more from you.");
-      sfxDenied();
+      act = 2;
+
+      // reset Act 2 objective tracking
+      act2SigCollected = 0;
+      act2Calibrated = false;
+      act2Seq = [];
+
+      mutateRoom();
+      actBannerFrames = 180;
+      queuePoemLine("The room shifts. It was listening.");
+      sfxDoorRumble();
       return;
     }
 
+    // ACT 2: door requires objective before focus
+    if (!canEnterDoorState()) {
+      queuePoemLine("The door wants more from you.");
+      sfxDenied();
+      enterFocus("door");
+      return;
+    }
+
+    if (!act2Calibrated || act2SigCollected < 2) {
+      const needSig = Math.max(0, 2 - act2SigCollected);
+      queuePoemLine(
+        "The door refuses. Calibrate (Lamp, Mirror, Desk) and harvest " + needSig + " more SIG."
+      );
+      sfxDenied();
+      enterFocus("door");
+      return;
+    }
+
+    // Objective complete, proceed
     doorTrail.t = Math.max(doorTrail.t, Math.floor(190 + signal * 35));
     sfxDoorRumble();
     enterFocus("door");
     return;
   }
 
-}
-
-  // Fractal reacts by object type
+  // -------------------------
+  // NON-DOOR OBJECTS
+  // -------------------------
   if (id === "lamp") {
     fractal.baseWarp = clamp01(fractal.baseWarp + 0.10);
     fractal.baseZoom = constrain(fractal.baseZoom * 1.10, 0.6, 18.0);
@@ -1246,25 +1137,26 @@ function coreAction(id) {
     sfxInteractLow();
   }
 
+  // Act 2 calibration sequence: lamp -> mirror -> desk
+  if (act === 2) {
+    act2Seq.push(id);
+    if (act2Seq.length > 3) act2Seq.shift();
+
+    const seq = act2Seq.join(",");
+    if (!act2Calibrated && seq === "lamp,mirror,desk") {
+      act2Calibrated = true;
+      queuePoemLine("Calibration complete. The room stops resisting your order.");
+      sfxBlip(980, 0.001, 0.06, 0.22);
+    }
+  }
+
   enterFocus(id);
-}
-
-function hiddenAction(glyphSeed, spriteId) {
-  gainSignal("open");
-  queuePoemLine(pickUniqueLine(LINES.hidden, 0x1DD33));
-  sfxInteractMid();
-
-  focusId = "hidden";
-  focusImg = getHiddenFocusCard(glyphSeed, spriteId);
-  mode = "focus";
-  focusZoom = 0.95;
-  focusZoomTarget = 0.95;
 }
 
 function enterFocus(id) {
   mode = "focus";
   focusId = id;
-  focusImg = sprites[id] || null;
+  focusImg = null;
   focusZoom = 1.35;
   focusZoomTarget = 1.35;
   sfxFocusOpen();
@@ -1274,8 +1166,8 @@ function exitFocus() {
   mode = "world";
   focusId = null;
   focusImg = null;
-  focusZoom = 0.95;
-  focusZoomTarget = 0.95;
+  focusZoom = 1.35;
+  focusZoomTarget = 1.35;
   sfxFocusClose();
 }
 
@@ -1286,9 +1178,8 @@ function keyPressed() {
   armAudioIfNeeded();
   if (cnv && cnv.elt) cnv.elt.focus();
 
-  // Final modal controls
   if (showFinalModal) {
-    if (keyCode === 32) { // SPACE
+    if (keyCode === 32) {
       if (ttsEnabled) {
         if (speaking) stopTTS();
         else speakText(finalPoemText);
@@ -1300,23 +1191,14 @@ function keyPressed() {
     return false;
   }
 
-  // ESC behavior
   if (keyCode === ESCAPE) {
-    if (mode === "focus") {
-      exitFocus();
-    } else {
-      paused = !paused;
-    }
+    if (mode === "focus") exitFocus();
+    else paused = !paused;
     return false;
   }
 
-  // Restart
-  if (key === "r" || key === "R") {
-    restartRun();
-    return false;
-  }
+  if (key === "r" || key === "R") { restartRun(); return false; }
 
-  // Door ping
   if (key === "q" || key === "Q") {
     if (mode === "world" && !paused) {
       pulse.active = true;
@@ -1327,7 +1209,6 @@ function keyPressed() {
     return false;
   }
 
-  // Interact / close focus / seal poem at door
   if (key === "e" || key === "E") {
     if (paused) return false;
 
@@ -1336,14 +1217,14 @@ function keyPressed() {
         finalPoemText = buildFinalPoemText();
         showFinalModal = true;
         paused = true;
-        exitFocus(); // ensure character doesn't freeze with focus state
+        exitFocus();
         return false;
       }
       exitFocus();
       return false;
     }
 
-    const near = nearestStationWorld();
+    const near = pickInteractTarget();
     if (near.s && near.d <= INTERACT_RADIUS) near.s.fn();
     else sfxTap();
     return false;
@@ -1384,32 +1265,29 @@ function closeFinalModal() {
   mode = "world";
   focusId = null;
   focusImg = null;
-  focusZoom = 0.95;
-  focusZoomTarget = 0.95;
+  focusZoom = 1.35;
+  focusZoomTarget = 1.35;
   if (cnv && cnv.elt) cnv.elt.focus();
 }
 
 /* ==========================================================
-   DRAW: FOCUS MODE (filter shader + fractal overlay)
+   DRAW: FOCUS MODE
 ========================================================== */
 function drawFocusMode() {
   drawCRTBackground();
 
-  // Base image for filtering
   imageLayer.clear();
-  if (focusImg) drawContain(imageLayer, focusImg, 0, 0, CW, CH, focusZoom, 0.88);
-  else imageLayer.background(0, 18, 0);
+  imageLayer.background(0, 18, 0);
 
-  // Put the sprite INSIDE the filtered window
+  // Zoomed inspected sprite, animated
   imageLayer.push();
   imageLayer.imageMode(CENTER);
   imageLayer.noSmooth();
-  const test = getItemSpriteFrame(focusId || "door");
-  const spr = 360 * S * focusZoom;        // sprite size now follows zoom
+  const test = (focusId === "hidden") ? focusImg : getItemSpriteFrame(focusId || "door");
+  const spr = 360 * S * focusZoom;
   imageLayer.image(test, CW * 0.5, CH * 0.5, spr, spr);
   imageLayer.pop();
 
-  // Filtered composite
   if (filteredLayer && filterShader && fractalLayer) {
     filteredLayer.shader(filterShader);
 
@@ -1438,7 +1316,6 @@ function drawFocusMode() {
     pop();
   }
 
-  // Focus UI (drawn on top, not filtered)
   noStroke();
   fill(0, 255, 170, 210);
   textAlign(LEFT, TOP);
@@ -1451,21 +1328,17 @@ function drawFocusMode() {
 
   if (focusId === "door" && canFinalizePoem()) {
     fill(0, 255, 170, 230);
-    text("Press E to seal the fate of the final poem.", 16 * S, 54 * S);
+    text("Press E to seal the final poem.", 16 * S, 54 * S);
   }
 }
 
 /* ==========================================================
-   DRAW: FINAL MODAL (door bg + fractal filter)
+   DRAW: FINAL MODAL
 ========================================================== */
 function drawFinalModal() {
-  // Base is DOOR image cover
   imageLayer.clear();
-  const doorImg = sprites.door || null;
-  if (doorImg) drawCover(imageLayer, doorImg, 0, 0, CW, CH);
-  else imageLayer.background(0, 18, 0);
+  imageLayer.background(0, 18, 0);
 
-  // Filter on top
   if (filteredLayer && filterShader && fractalLayer) {
     filteredLayer.shader(filterShader);
 
@@ -1485,12 +1358,10 @@ function drawFinalModal() {
     image(imageLayer, 0, 0);
   }
 
-  // Dim
   noStroke();
   fill(0, 0, 0, 160);
   rect(0, 0, CW, CH);
 
-  // Panel
   const panelW = Math.min(CW * 0.84, 940 * S);
   const panelH = Math.min(CH * 0.82, 660 * S);
   const px = (CW - panelW) * 0.5;
@@ -1525,7 +1396,7 @@ function drawFinalModal() {
 }
 
 /* ==========================================================
-   SIGNAL GAIN (poetry returns)
+   SIGNAL GAIN
 ========================================================== */
 function gainSignal(reason = "sig") {
   const before = signal;
@@ -1535,9 +1406,9 @@ function gainSignal(reason = "sig") {
   doorTrail.maxT = 260 + signal * 50;
   pulse.speed = 18 + signal * 2;
 
-  queuePoemLine(pickUniqueLine(SIGNAL_LINES, 0x51A1A1));       // fixed
+  queuePoemLine(pickUniqueLine(SIGNAL_LINES, 0x51A1A1));
   if (random() < 0.45) queuePoemLine(pickUniqueLine(MUTATION_LINES, 0xA73A73));
-  if (random() < 0.22) queuePoemLine(pickUniqueLine(MUTATION_LINES, 0xA73A73)); // fixed typo
+  if (random() < 0.22) queuePoemLine(pickUniqueLine(MUTATION_LINES, 0xA73A73));
 
   fractal.baseWarp = clamp01(fractal.baseWarp + 0.05);
   fractal.iters = Math.min(520, fractal.iters + 12);
@@ -1552,13 +1423,13 @@ function addInteractionPoetry(id) {
   history.push(id);
 
   if (history.length >= 2 && random() < 0.45) {
-    queuePoemLine(pickUniqueLine(CONNECTORS, 0xC0FFEE));      // fixed
+    queuePoemLine(pickUniqueLine(CONNECTORS, 0xC0FFEE));
   }
 
   const bucket = LINES[id] || ["Something responds, quietly."];
   queuePoemLine(pickUniqueLine(bucket, idHash(id)));
 
-  if (random() < 0.25) queuePoemLine(pickUniqueLine(GLITCH_LINES, 0xA117C)); // fixed
+  if (random() < 0.25) queuePoemLine(pickUniqueLine(GLITCH_LINES, 0xA117C));
 }
 
 function buildFinalPoemText() {
@@ -1574,7 +1445,7 @@ function buildFinalPoemText() {
 
   const header = [
     "A SMALL LOOP LEAKS",
-    "Signal: " + signal + "/6",
+    "Act: " + act + "   Signal: " + signal + "/6",
     "Objects: " + nonDoorCount + " plus door",
     ""
   ].join("\n");
@@ -1609,43 +1480,17 @@ function pickUniqueLine(bucket, salt) {
   return fallback;
 }
 
-function primeMachineLines() {
-  const rand = mulberry32((runSeed ^ 0xA5B357) >>> 0);
-
-  primeMachineLines();
-
-  if (rand() < 0.45) queuePoemLine(pickUniqueLine(CONNECTORS, "CONNECT"));
-  if (rand() < 0.22) queuePoemLine(pickUniqueLine(MUTATION_LINES, "MUTATE"));
-  if (rand() < 0.25) queuePoemLine(pickUniqueLine(GLITCH_LINES, "GLITCH"));
-}
-
 /* ==========================================================
-   TYPEWRITER (line hold + cursor)  [TIME-BASED]
-   - One line at a time (heldLine stays until next line starts)
-   - Cursor blinks continuously
-   - Typing speed controlled by TYPE_DELAY_MS
-   - Optional: typing tick sound every TYPE_TICK_EVERY chars
+   TYPEWRITER
 ========================================================== */
-
-// Tune these:
-const TYPE_DELAY_MS = 120;        // bigger = slower typing (try 55–90)
-const TYPE_TICK_EVERY = 4;       // play a tick every N characters
-const CURSOR_BLINK_FRAMES = 26;  // cursor blink rate
-
-let lastTypeTime = 0;
-
 function resetTypewriterState() {
   poemQueue = [];
-
   typingLine = "";
   typingIndex = 0;
   isTyping = false;
-
   heldLine = "";
-
   cursorOn = true;
   cursorTimer = 0;
-
   lastTypeTime = 0;
 }
 
@@ -1659,43 +1504,33 @@ function queuePoemLine(line) {
 function updateTypewriter() {
   const now = millis();
 
-  // Cursor blink
   cursorTimer++;
   if (cursorTimer >= CURSOR_BLINK_FRAMES) {
     cursorTimer = 0;
     cursorOn = !cursorOn;
   }
 
-  // If we're idle, start the next queued line
   if (!isTyping && poemQueue.length > 0) {
     typingLine = poemQueue.shift();
     typingIndex = 0;
     isTyping = true;
-
-    // Keep whatever was last on screen until the first new char arrives
-    // (heldLine will update as soon as typing begins)
     lastTypeTime = now;
   }
 
-  // Nothing to type
   if (!isTyping) return;
 
-  // Type exactly 1 character per TYPE_DELAY_MS
   if ((now - lastTypeTime) < TYPE_DELAY_MS) return;
   lastTypeTime = now;
 
-  // Advance typing
   if (typingIndex < typingLine.length) {
     typingIndex++;
     heldLine = typingLine.slice(0, typingIndex);
 
-    // Optional typing tick sound
     if (audioArmed && !showFinalModal && (typingIndex % TYPE_TICK_EVERY === 0)) {
       const f = 420 + (typingIndex % 9) * 12;
       sfxBlip(f, 0.001, 0.02, 0.10);
     }
   } else {
-    // Finished this line; it remains on screen until the next line begins
     isTyping = false;
   }
 }
@@ -1738,7 +1573,6 @@ function rebuildPoemDisplay() {
 function updateUI() {
   if (!promptEl) return;
 
-  // default styling
   promptEl.classList.remove("urgent");
   const actTag = (act === 2) ? "[ACT 2] " : "[ACT 1] ";
 
@@ -1757,36 +1591,39 @@ function updateUI() {
   }
 
   if (paused) {
-    promptEl.textContent = actTag = "Paused. ESC returns. R restarts.";
+    promptEl.textContent = actTag + "Paused. ESC returns. R restarts.";
     return;
   }
 
   const nonDoorCount = history.filter(h => h !== "door").length;
   const need = Math.max(0, 2 - nonDoorCount);
 
-  const near = nearestStationWorld();
+  // UI only: determine if something is in range (do NOT call near.s.fn here)
+  const near = pickInteractTarget();
   const inRange = near.s && near.d <= INTERACT_RADIUS;
 
-  if (inRange && near.s) {
-    if (near.s.kind === "core" && near.s.id === "door" && need > 0) {
-      promptEl.textContent = actTag + "The door wants more input. Find " + need + " more object(s).";
+  // Act 2 task prompt has priority in world mode
+  if (act === 2 && !history.includes("door")) {
+    const needSig = Math.max(0, 2 - act2SigCollected);
+    const cal = act2Calibrated ? "DONE" : "Lamp, Mirror, Desk";
+    promptEl.textContent = actTag + "ACT 2 TASKS: SIG +" + needSig + " and CALIBRATE: " + cal + ".";
+    if (!act2Calibrated || needSig > 0) promptEl.classList.add("urgent");
+    return;
+  }
+
+  if (inRange) {
+    if (act === 1 && need > 0 && near.s && near.s.id === "door") {
+      promptEl.textContent = actTag + "The door wants more. Find " + need + " more object(s).";
       promptEl.classList.add("urgent");
     } else {
       promptEl.textContent = actTag + "Press E to interact. Q pings the door.";
     }
-
-    if (near.s.id && near.s.id !== lastNearId) {
-      sfxProximity();
-      musicAccent();
-    }
-    lastNearId = near.s.id;
     return;
   }
 
-  lastNearId = null;
-
-  if (need > 0) {
-    promptEl.textContent = actTag +"EXPLORE. FIND " + need + " MORE OBJECT" + (need > 1 ? "S." : ".") + " Hidden SIG nodes deepen SIGNAL.";
+  if (act === 1 && need > 0) {
+    promptEl.textContent =
+      actTag + "EXPLORE. FIND " + need + " MORE OBJECT" + (need > 1 ? "S." : ".") + " Hidden SIG nodes deepen SIGNAL.";
     promptEl.classList.add("urgent");
   } else if (!history.includes("door")) {
     promptEl.textContent = actTag + "You have enough lines. Find the door. Press Q to ping it.";
@@ -1826,7 +1663,6 @@ function renderFractalLayer() {
 
   fractalLayer.shader(mandelShader);
 
-  // core fractal uniforms
   safeUniform(mandelShader, "u_resolution", [CW, CH]);
   safeUniform(mandelShader, "u_time", t);
   safeUniform(mandelShader, "u_center", [fractal.center.x, fractal.center.y]);
@@ -1834,65 +1670,16 @@ function renderFractalLayer() {
   safeUniform(mandelShader, "u_iter", Math.min(700, Math.max(1, fractal.iters + signal * 18)));
   safeUniform(mandelShader, "u_warp", clamp01(fractal.warp + signal * 0.02));
 
-  // screensaver controls
   safeUniform(mandelShader, "u_grow", fractAnim.growAmount);
   safeUniform(mandelShader, "u_palette", palettePhase);
-
-  // Object-reactive uniforms (UV space)
-  // (If your shader doesn't use them, safeUniform will just fail silently)
-  const uv = coreObjectUVs();
-  safeUniform(mandelShader, "u_obj1", uv[0]);
-  safeUniform(mandelShader, "u_obj2", uv[1]);
-  safeUniform(mandelShader, "u_obj3", uv[2]);
-  safeUniform(mandelShader, "u_obj4", uv[3]);
-
-  const strengths = objectStrengths();
-  safeUniform(mandelShader, "u_objStrength", strengths);
 
   fractalLayer.rect(-CW / 2, -CH / 2, CW, CH);
 }
 
-function coreObjectUVs() {
-  // Convert world positions of core objects to on-screen UV (0..1)
-  // This makes the “field” follow where objects appear relative to camera.
-  const arr = [];
-  for (const id of CORE_IDS) {
-    const s = stations.find(st => st.kind === "core" && st.id === id);
-    if (!s) { arr.push([0.5, 0.5]); continue; }
-    const sc = worldToScreen(s.x, s.y);
-    const u = constrain(sc.x / CW, 0, 1);
-    const v = constrain(1.0 - (sc.y / CH), 0, 1); // flip Y for shader UVs
-    arr.push([u, v]);
-  }
-  return arr;
-}
-
-function objectStrengths() {
-  // Strength increases when near / interacted / signal high
-  const vals = [];
-
-  for (const id of CORE_IDS) {
-    const s = stations.find(st => st.kind === "core" && st.id === id);
-    if (!s) { vals.push(0.0); continue; }
-
-    const d = dist(player.x, player.y, s.x, s.y);
-    const near = 1.0 - constrain(d / (INTERACT_RADIUS * 2.2), 0, 1);
-    const interacted = history.includes(id) ? 0.7 : 0.0;
-    const base = (id === "door") ? 0.35 : 0.45;
-
-    vals.push(clamp01(base * near + interacted * 0.6));
-  }
-
-  // Return vec4
-  return [vals[0], vals[1], vals[2], vals[3]];
-}
-
 /* ==========================================================
-   HIDDEN FOCUS CARD (close-up not blank)
+   HIDDEN FOCUS CARD
 ========================================================== */
 function getHiddenFocusCard(glyphSeed, spriteId) {
-  const img = getItemSpriteBase ? getItemSpriteBase(spriteId) : getItemSprite(spriteId);
-
   const key = glyphSeed + ":" + spriteId + ":" + CW + "x" + CH;
   if (hiddenFocusCache.has(key)) return hiddenFocusCache.get(key);
 
@@ -1907,346 +1694,143 @@ function getHiddenFocusCard(glyphSeed, spriteId) {
     g.rect(0, 0, CW, CH);
   }
 
-  // scanlines
-  g.noStroke();
-  g.fill(0, 0, 0, 60);
-  g.rect(0, 0, CW, CH);
-  for (let y = 0; y < CH; y += 3) {
-    g.stroke(0, 255, 120, 10);
-    g.line(0, y, CW, y);
-  }
-
-  const pad = 28 * S;
-  const w = CW - pad * 2;
-  const h = CH - pad * 2;
-
-  g.stroke(0, 255, 170, 170);
-  g.strokeWeight(3 * S);
-  g.fill(0, 28, 0, 230);
-  g.rect(pad, pad, w, h, 12 * S);
-
-  g.noStroke();
-  g.fill(0, 255, 170, 240);
-  g.textAlign(LEFT, TOP);
-  g.textSize(22 * S);
-  g.text("SIG NODE", pad + 18 * S, pad + 14 * S);
-
-  g.fill(0, 255, 170, 170);
-  g.textSize(12 * S);
-  g.text("A withheld word from the machine layer.", pad + 18 * S, pad + 46 * S);
-
-  // center box with sprite
-  if (!img) {
-  console.log("Missing sprite for:", spriteId);
-}
-
-  const cx = pad + w * 0.5;
-  const cy = pad + h * 0.52;
-
+  // Big SIG glyph
   g.push();
-  g.imageMode(CENTER);
-  g.noSmooth();
-
-  // subtle pulse without needing "active"
-  const pulse = 1.0 + 0.04 * Math.sin(frameCount * 0.14);
-
-  const sizeW = (spriteId === "door") ? (120 * S * pulse) : (150 * S * pulse);
-  const sizeH = (spriteId === "door") ? (180 * S * pulse) : sizeW;
-
-  if (img) {
-  g.image(img, cx, cy, sizeW, sizeH);
-  } else {
-    g.noStroke();
-    g.fill(0,255,170);
-    g.textAlign(CENTER, CENTER);
-    g.text("NO SPRITE: " + spriteId, cx, cy);
-}
-  g.pop();
-
-  // glyph at bottom
-  const pts = makeGlyphPoints(glyphSeed, 10);
-
-  g.push();
-  g.translate(CW * 0.5, CH * 0.78);
-
+  g.translate(CW * 0.5, CH * 0.5);
   g.noFill();
-  g.stroke(0, 255, 170, 140);
-  g.strokeWeight(2.5 * S);
-  g.circle(0, 0, 200 * S);
+  g.stroke(0, 255, 170, 220);
+  g.strokeWeight(4 * S);
+  g.circle(0, 0, 260 * S);
+
+  g.stroke(0, 255, 120, 160);
+  g.strokeWeight(2 * S);
+  g.circle(0, 0, 190 * S);
+
+  g.stroke(0, 255, 170, 180);
+  g.strokeWeight(3 * S);
+  g.line(-80 * S, 0, 80 * S, 0);
+  g.line(-56 * S, -40 * S, 56 * S, 40 * S);
 
   g.noStroke();
-  g.fill(0, 255, 170, 200);
-  g.beginShape();
-  for (let i = 0; i < pts.length; i++) {
-    const pt = pts[i];
-    g.vertex(pt.x * 3.0, pt.y * 3.0);
-  }
-  g.endShape(CLOSE);
-
-  g.fill(0, 255, 170, 170);
-  g.textAlign(CENTER, TOP);
-  g.textSize(12 * S);
-  g.text("SIGNAL deepens the poem and strengthens door guidance.", 0, 120 * S);
+  g.fill(0, 255, 170, 220);
+  g.textAlign(CENTER, CENTER);
+  g.textSize(42 * S);
+  g.text("SIG", 0, 120 * S);
 
   g.pop();
+
+  // Small item sprite badge
+  const badge = getItemSpriteFrame(spriteId);
+  g.imageMode(CENTER);
+  g.image(badge, CW * 0.5, CH * 0.5 - 160 * S, 180 * S, 180 * S);
 
   hiddenFocusCache.set(key, g);
   return g;
 }
 
 /* ==========================================================
-   FOOTSTEPS
+   SPRITES: CHUNKY PIXEL ART + LIGHT ANIMATION
 ========================================================== */
-function updateFootsteps() {
-  const moving =
-    keyIsDown(LEFT_ARROW) || keyIsDown(RIGHT_ARROW) || keyIsDown(UP_ARROW) || keyIsDown(DOWN_ARROW) ||
-    keyIsDown(65) || keyIsDown(68) || keyIsDown(87) || keyIsDown(83);
+function getItemSpriteBase(id) {
+  if (itemSpriteCache.has(id)) return itemSpriteCache.get(id);
 
-  if (!moving) { stepTimer = 0; return; }
+  const g = createGraphics(24, 24);
+  g.pixelDensity(1);
+  g.noSmooth();
+  g.clear();
 
-  stepTimer += 1;
-  const cadence = Math.max(10, Math.floor(18 / Math.max(S, 0.6)));
-  if (stepTimer >= cadence) {
-    stepTimer = 0;
-    sfxStep();
+  const ON  = [0, 255, 170, 230];
+  const DIM = [0, 200, 120, 200];
+
+  const px = (x, y, c = ON) => { g.noStroke(); g.fill(...c); g.rect(x, y, 2, 2); };
+
+  if (id === "lamp") {
+    px(10, 18); px(12, 18); px(14, 18);
+    px(12, 16); px(12, 14);
+    for (let x = 6; x <= 16; x += 2) px(x, 10, DIM);
+    for (let x = 8; x <= 14; x += 2) px(x, 8, DIM);
+    px(10, 6, DIM); px(12, 6, DIM);
+    px(12, 12); px(10, 12, DIM); px(14, 12, DIM);
+  } else if (id === "mirror") {
+    for (let x = 6; x <= 16; x += 2) { px(x, 6); px(x, 16); }
+    for (let y = 8; y <= 14; y += 2) { px(6, y); px(16, y); }
+    for (let y = 8; y <= 14; y += 2) for (let x = 8; x <= 14; x += 2) px(x, y, DIM);
+  } else if (id === "desk") {
+    for (let x = 4; x <= 18; x += 2) px(x, 10);
+    for (let x = 6; x <= 16; x += 2) px(x, 12);
+    for (let y = 14; y <= 20; y += 2) { px(6, y, DIM); px(16, y, DIM); }
+  } else if (id === "door") {
+    for (let y = 4; y <= 18; y += 2) { px(10, y); px(12, y); px(14, y); }
+    for (let y = 4; y <= 18; y += 2) { px(8, y, DIM); px(16, y, DIM); }
+    px(16, 12);
+  } else {
+    for (let y = 8; y <= 14; y += 2) for (let x = 8; x <= 14; x += 2) px(x, y);
   }
+
+  itemSpriteCache.set(id, g);
+  return g;
+}
+
+function getItemSpriteFrame(id) {
+  const base = getItemSpriteBase(id);
+
+  const g = createGraphics(24, 24);
+  g.pixelDensity(1);
+  g.noSmooth();
+  g.clear();
+  g.image(base, 0, 0);
+
+  const ON  = [0, 255, 170, 235];
+  const HOT = [180, 255, 220, 235];
+  const DIM = [0, 200, 120, 210];
+
+  const px = (x, y, c = ON) => { g.noStroke(); g.fill(...c); g.rect(x, y, 2, 2); };
+
+  if (id === "lamp") {
+    const t = frameCount % 12;
+    if (t < 6) { px(12, 12, HOT); px(10, 12, DIM); }
+    else { px(12, 12, ON); px(14, 12, HOT); }
+  }
+
+  if (id === "mirror") {
+    const step = (frameCount % 16);
+    const x = 8 + (step % 4) * 2;
+    const y = 8 + Math.floor(step / 4) * 2;
+    px(x, y, HOT);
+    px(x + 2, y + 2, DIM);
+  }
+
+  if (id === "desk") {
+    const y = (frameCount % 10 < 5) ? 10 : 12;
+    for (let x = 6; x <= 16; x += 2) px(x, y, DIM);
+  }
+
+  if (id === "door") {
+    const blink = (frameCount % 20 < 3);
+    if (blink) px(16, 12, HOT);
+    if (frameCount % 18 < 9) { px(8, 8, DIM); px(16, 8, DIM); }
+  }
+
+  return g;
 }
 
 /* ==========================================================
-   TTS
+   UTILITIES
 ========================================================== */
-function stopTTS() {
-  if (!ttsEnabled) return;
-  window.speechSynthesis.cancel();
-  speaking = false;
-}
-
-function speakText(text) {
-  if (!ttsEnabled) return;
-  stopTTS();
-
-  const utter = new SpeechSynthesisUtterance(text);
-  utter.rate = 0.95;
-  utter.pitch = 1.0;
-  utter.volume = 1.0;
-
-  utter.onend = () => { speaking = false; };
-  utter.onerror = () => { speaking = false; };
-
-  speaking = true;
-  window.speechSynthesis.speak(utter);
-}
-
-/* ==========================================================
-   AUDIO ARM + SFX (louder)
-========================================================== */
-function armAudioIfNeeded() {
-  if (audioArmed) return;
-
-  // If p5.sound not loaded, fail gracefully
-  if (typeof p5 === "undefined" || typeof p5.Envelope === "undefined") {
-    console.warn("p5.sound not loaded. Audio disabled.");
-    audioArmed = true;
-    return;
-  }
-
-  userStartAudio();
-
-  // FIX: use p5.sound masterVolume function (only exists if p5.sound loaded)
-  if (typeof masterVolume === "function") masterVolume(1.0);
-
-  blipOsc = new p5.Oscillator("triangle");
-  blipOsc.freq(440);
-  blipOsc.amp(0);
-
-  windNoise = new p5.Noise("pink");
-  windNoise.amp(0);
-
-  lp = new p5.LowPass();
-  lp.freq(1400);
-  lp.res(6);
-
-  blipOsc.disconnect();
-  windNoise.disconnect();
-
-  blipOsc.connect(lp);
-  windNoise.connect(lp);
-  lp.connect();
-
-  envBlip = new p5.Envelope();
-  envBlip.setADSR(0.001, 0.06, 0.0, 0.06);
-  envBlip.setRange(0.45, 0.0);
-
-  envNoise = new p5.Envelope();
-  envNoise.setADSR(0.001, 0.06, 0.0, 0.08);
-  envNoise.setRange(0.28, 0.0);
-
-  blipOsc.start();
-  windNoise.start();
-
-  audioArmed = true;
-  initMusic();
-}
-
-function sfxBlip(freq, attack, release, amp) {
-  if (!audioArmed || !envBlip || !blipOsc) return;
-  blipOsc.freq(freq);
-  envBlip.setADSR(attack, release, 0.0, 0.01);
-  envBlip.setRange(amp, 0.0);
-  envBlip.play(blipOsc);
-}
-
-function sfxNoise(freq, dur, amp) {
-  if (!audioArmed || !envNoise || !windNoise || !lp) return;
-  lp.freq(freq);
-  envNoise.setADSR(0.001, dur, 0.0, 0.02);
-  envNoise.setRange(amp, 0.0);
-  envNoise.play(windNoise);
-}
-
-function sfxStep() { sfxNoise(520, 0.018, 0.10); }
-function sfxProximity() { sfxBlip(720, 0.001, 0.04, 0.28); }
-function sfxTap() { sfxBlip(220, 0.001, 0.05, 0.28); }
-function sfxDenied() { sfxBlip(150, 0.001, 0.08, 0.36); sfxNoise(320, 0.06, 0.22); }
-function sfxInteractHigh() { sfxBlip(880, 0.001, 0.06, 0.38); sfxNoise(1200, 0.08, 0.22); }
-function sfxInteractMid() { sfxBlip(520, 0.001, 0.07, 0.36); sfxNoise(950, 0.08, 0.22); }
-function sfxInteractLow() { sfxBlip(260, 0.001, 0.08, 0.34); sfxNoise(750, 0.10, 0.22); }
-function sfxDoorRumble() { sfxNoise(180, 0.30, 0.30); sfxBlip(90, 0.001, 0.18, 0.30); }
-function sfxFocusOpen() { sfxBlip(980, 0.001, 0.08, 0.28); sfxNoise(1400, 0.10, 0.18); }
-function sfxFocusClose() { sfxBlip(360, 0.001, 0.08, 0.28); sfxNoise(700, 0.08, 0.18); }
-function sfxZoomTick(zoomingOut) { sfxBlip(zoomingOut ? 300 : 520, 0.001, 0.04, 0.22); }
-
-/* ==========================================================
-   PROCEDURAL MUSIC (movement reactive)
-========================================================== */
-function initMusic() {
-  if (!musicOn || !audioArmed) return;
-  if (typeof p5 === "undefined" || typeof p5.Oscillator === "undefined") return;
-  if (music.lead) return;
-
-  music.filter = new p5.LowPass();
-  music.filter.freq(1200);
-  music.filter.res(3);
-
-  music.reverb = new p5.Reverb();
-  music.delay = new p5.Delay();
-
-  music.lead = new p5.Oscillator("triangle");
-  music.lead.amp(0);
-  music.lead.start();
-
-  music.bass = new p5.Oscillator("sine");
-  music.bass.amp(0);
-  music.bass.start();
-
-  music.hat = new p5.Noise("white");
-  music.hat.amp(0);
-  music.hat.start();
-
-  music.lead.disconnect();
-  music.bass.disconnect();
-  music.hat.disconnect();
-
-  music.lead.connect(music.filter);
-  music.bass.connect(music.filter);
-  music.hat.connect(music.filter);
-
-  music.delay.process(music.filter, 0.22, 0.42, 1800);
-  music.reverb.process(music.filter, 3.5, 2.0);
-
-  music.step = 0;
-  music.lastStepAt = millis();
-  updateMusicTiming();
-}
-
-function updateMusicTiming() {
-  const bps = music.bpm / 60;
-  music.stepMs = 1000 / (bps * 4);
-}
-
-function midiToFreq(m) { return 440 * Math.pow(2, (m - 69) / 12); }
-
-function scaleNote(rootMidi, degree) {
-  const scale = [0, 2, 3, 5, 7, 8, 10]; // minor-ish
-  const oct = Math.floor(degree / scale.length);
-  const idx = degree % scale.length;
-  return rootMidi + scale[idx] + oct * 12;
-}
-
-function playEnv(oscOrNoise, attack, decay, level) {
-  const env = new p5.Envelope();
-  env.setADSR(attack, decay, 0, 0.001);
-  env.setRange(level, 0);
-  env.play(oscOrNoise);
-}
-
-function musicAccent() {
-  if (!musicOn || !audioArmed || !music.lead) return;
-  const root = 57;
-  const note = scaleNote(root, Math.floor(random(0, 10)));
-  music.lead.freq(midiToFreq(note));
-  playEnv(music.lead, 0.002, 0.08, 0.16);
-}
-
-function updateProceduralMusic() {
-  if (!musicOn || !audioArmed || !music.lead) return;
-
-  const moving =
-    keyIsDown(LEFT_ARROW) || keyIsDown(RIGHT_ARROW) || keyIsDown(UP_ARROW) || keyIsDown(DOWN_ARROW) ||
-    keyIsDown(65) || keyIsDown(68) || keyIsDown(87) || keyIsDown(83);
-
-  const targetSpeed = moving ? 1.0 : 0.0;
-  music.speedSmoothed = lerp(music.speedSmoothed, targetSpeed, 0.06);
-
-  music.filter.freq(lerp(650, 2400, music.speedSmoothed));
-  music.bpm = lerp(music.bpmBase, music.bpmBase + 18, music.speedSmoothed);
-  updateMusicTiming();
-
-  const focusAmt = (mode === "focus" || showFinalModal) ? 1 : 0;
-  music.delay.feedback(lerp(0.34, 0.50, focusAmt));
-
-  const now = millis();
-  while (now - music.lastStepAt >= music.stepMs) {
-    music.lastStepAt += music.stepMs;
-    music.step = (music.step + 1) % 16;
-    musicTick(music.step);
-  }
-}
-
-function musicTick(step) {
-  const root = 57 + (history.length % 3) * 2;
-
-  const leadPattern = [0, -1, 3, -1, 5, -1, 3, -1, 7, -1, 5, -1, 3, -1, 2, -1];
-  const deg = leadPattern[step];
-
-  if (deg >= 0) {
-    const note = scaleNote(root, deg);
-    music.lead.freq(midiToFreq(note));
-    const amp = lerp(0.10, 0.20, music.speedSmoothed);
-    playEnv(music.lead, 0.004, 0.12, amp);
-  }
-
-  if (step % 4 === 0) {
-    const bassNote = scaleNote(root - 12, 0);
-    music.bass.freq(midiToFreq(bassNote));
-    playEnv(music.bass, 0.002, 0.18, 0.22);
-  }
-
-  if (step % 2 === 1) {
-    playEnv(music.hat, 0.001, 0.03, 0.10);
-  }
-}
-
-/* ==========================================================
-   HELPERS + SAFE UNIFORMS
-========================================================== */
-const TAU = 6.28318530718;
-
 function clamp01(v) { return Math.max(0, Math.min(1, v)); }
 
-function mulberry32(seed) {
+function idHash(str) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function mulberry32(a) {
   return function() {
-    let t = seed += 0x6D2B79F5;
+    let t = a += 0x6D2B79F5;
     t = Math.imul(t ^ (t >>> 15), t | 1);
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
@@ -2254,81 +1838,211 @@ function mulberry32(seed) {
 }
 
 function pickFrom(arr, randFn) {
-  return arr[Math.floor(randFn() * arr.length)];
-}
-
-function idHash(id) {
-  let h = 2166136261 >>> 0;
-  for (let i = 0; i < id.length; i++) {
-    h ^= id.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
-
-function safeUniform(shaderObj, name, value) {
-  // Prevents hard crashes if uniform doesn't exist in shader
-  try { shaderObj.setUniform(name, value); } catch (e) {}
-}
-
-function drawContain(g, img, x, y, w, h, zoom = 1.0, padScale = 0.90) {
-  const availW = w * padScale;
-  const availH = h * padScale;
-
-  const ir = img.width / img.height;
-  const rr = availW / availH;
-
-  let dw, dh;
-  if (ir > rr) { dw = availW; dh = availW / ir; }
-  else { dh = availH; dw = availH * ir; }
-
-  dw *= zoom;
-  dh *= zoom;
-
-  const dx = x + (w - dw) * 0.5;
-  const dy = y + (h - dh) * 0.5;
-
-  g.imageMode(CORNER);
-  g.image(img, dx, dy, dw, dh);
-}
-
-function drawCover(g, img, x, y, w, h) {
-  const ir = img.width / img.height;
-  const rr = w / h;
-
-  let dw, dh;
-  if (ir > rr) { dh = h; dw = h * ir; }
-  else { dw = w; dh = w / ir; }
-
-  const dx = x + (w - dw) * 0.5;
-  const dy = y + (h - dh) * 0.5;
-
-  g.imageMode(CORNER);
-  g.image(img, dx, dy, dw, dh);
-}
-
-function mutateRoom() {
-
-  // Make fractal more unstable
-  actBannerFrames = 180; // about 3 seconds at 60fps
-  fractal.baseWarp += 0.2;
-  fractal.iters += 60;
-
-  // Increase signal pressure
-  signal = Math.min(signal + 1, 6);
-
-  // Slightly move objects
-  for (const s of stations) {
-    if (s.kind === "core" && s.id !== "door") {
-      s.x += random(-120, 120);
-      s.y += random(-120, 120);
-    }
-  }
-
+  const i = Math.floor(randFn() * arr.length);
+  return arr[Math.max(0, Math.min(arr.length - 1, i))];
 }
 
 /* ==========================================================
-   NOTE: If your filter.frag expects different uniform names,
-   it will still render base image (no crash), but without filter.
-   Paste filter.frag if you want me to align it precisely.
+   SAFE UNIFORMS
 ========================================================== */
+function safeUniform(sh, name, val) {
+  try { if (sh && typeof sh.setUniform === "function") sh.setUniform(name, val); }
+  catch (e) { /* ignore */ }
+}
+
+/* ==========================================================
+   AUDIO
+========================================================== */
+function armAudioIfNeeded() {
+  if (audioArmed) return;
+  userStartAudio();
+  audioArmed = true;
+
+  blipOsc = new p5.Oscillator("sine");
+  blipOsc.start();
+  blipOsc.amp(0);
+
+  windNoise = new p5.Noise("pink");
+  windNoise.start();
+  windNoise.amp(0);
+
+  lp = new p5.LowPass();
+  windNoise.disconnect();
+  windNoise.connect(lp);
+  lp.freq(800);
+  lp.res(10);
+
+  envBlip = new p5.Envelope();
+  envBlip.setADSR(0.001, 0.06, 0.0, 0.08);
+  envBlip.setRange(0.6, 0);
+
+  envNoise = new p5.Envelope();
+  envNoise.setADSR(0.001, 0.08, 0.0, 0.12);
+  envNoise.setRange(0.35, 0);
+
+  initProceduralMusic();
+}
+
+function sfxBlip(freq, a, d, amp) {
+  if (!audioArmed || !blipOsc || !envBlip) return;
+  blipOsc.freq(freq);
+  envBlip.setADSR(a, d, 0.0, d);
+  envBlip.setRange(amp, 0);
+  envBlip.play(blipOsc);
+}
+
+function sfxNoise(freq, d, amp) {
+  if (!audioArmed || !windNoise || !envNoise || !lp) return;
+  lp.freq(freq);
+  envNoise.setADSR(0.001, d, 0.0, d);
+  envNoise.setRange(amp, 0);
+  envNoise.play(windNoise);
+}
+
+function sfxTap() { sfxBlip(520, 0.001, 0.03, 0.14); }
+function sfxDenied() { sfxBlip(180, 0.001, 0.08, 0.22); sfxNoise(320, 0.10, 0.20); }
+function sfxProximity() { sfxBlip(740, 0.001, 0.02, 0.10); }
+function sfxDoorRumble() { sfxNoise(160, 0.18, 0.35); sfxBlip(260, 0.002, 0.10, 0.20); }
+function sfxInteractHigh() { sfxBlip(920, 0.001, 0.05, 0.22); }
+function sfxInteractMid() { sfxBlip(640, 0.001, 0.06, 0.22); }
+function sfxInteractLow() { sfxBlip(360, 0.001, 0.08, 0.22); }
+function sfxFocusOpen() { sfxBlip(820, 0.001, 0.05, 0.16); }
+function sfxFocusClose() { sfxBlip(520, 0.001, 0.05, 0.14); }
+function sfxZoomTick(down) { sfxBlip(down ? 420 : 560, 0.001, 0.02, 0.10); }
+
+function initProceduralMusic() {
+  // Instruments (no noise)
+  music.lead = new p5.Oscillator("triangle");
+  music.bass = new p5.Oscillator("square");
+  music.hatOsc = new p5.Oscillator("square"); // clicky hat
+
+  music.lead.start(); music.bass.start(); music.hatOsc.start();
+  music.lead.amp(0);  music.bass.amp(0);  music.hatOsc.amp(0);
+
+  // FX chain
+  music.filter = new p5.LowPass();
+  music.reverb = new p5.Reverb();
+  music.delay  = new p5.Delay();
+
+  // Route into filter
+  music.lead.disconnect();
+  music.bass.disconnect();
+  music.hatOsc.disconnect();
+
+  music.lead.connect(music.filter);
+  music.bass.connect(music.filter);
+  music.hatOsc.connect(music.filter);
+
+  music.reverb.process(music.filter, 1.2, 1.0);
+  music.delay.process(music.filter, 0.12, 0.22, 1600);
+
+  music.filter.freq(1500);
+  music.filter.res(9);
+
+  // Timing + pep
+  music.lastStepAt = 0;
+  music.step = 0;
+  music.bpmBase = 112;
+  music.bpm = 112;
+
+  music.speedSmoothed = 0;
+  music._energySmoothed = 0;
+}
+
+function updateProceduralMusic() {
+  if (!audioArmed || !musicOn) return;
+
+  const targetSpeed  = (mode === "world" && !paused && !showFinalModal) ? (player.speed01 || 0) : 0;
+  const targetEnergy = (mode === "world" && !paused && !showFinalModal) ? (player.energy  || 0) : 0;
+
+  music.speedSmoothed = lerp(music.speedSmoothed, targetSpeed, 0.10);
+  music._energySmoothed = lerp(music._energySmoothed || 0, targetEnergy, 0.12);
+
+  const groove = music.speedSmoothed || 0;
+  const energy = music._energySmoothed || 0;
+  const drive  = constrain(groove * 0.85 + energy * 0.55, 0, 1);
+
+  // Faster when moving
+  music.bpm = lerp(music.bpmBase, music.bpmBase + 38, drive);
+
+  const t = millis();
+  const stepMs = 60000 / music.bpm;
+  if (t - music.lastStepAt < stepMs) return;
+  music.lastStepAt = t;
+
+  music.step = (music.step + 1) % 16;
+
+  // Notes
+  const scale = [0, 2, 4, 7, 9, 12]; // more upbeat than minor-ish
+  const root = 220;
+
+  const leadDeg = scale[music.step % scale.length];
+  const leadF = root * Math.pow(2, leadDeg / 12);
+
+  const bassPattern = [0,0,0,0, 4,4,0,0, 7,7,4,4, 0,0,9,9];
+  const bassDeg = bassPattern[music.step];
+  const bassF = (root / 2) * Math.pow(2, bassDeg / 12);
+
+  // Amps
+  const leadAmp = 0.030 + 0.12 * drive;
+  const bassAmp = 0.025 + 0.11 * drive;
+
+  music.lead.freq(leadF);
+  music.bass.freq(bassF);
+
+  music.lead.amp(leadAmp, 0.03);
+  music.bass.amp(bassAmp, 0.03);
+
+  // Hat "click" (no noise): short ticks with accents
+  let hatAmp = 0;
+
+  // offbeats
+  if (music.step % 2 === 1) hatAmp += 0.08;
+
+  // extra pep when moving
+  if (drive > 0.55 && (music.step === 6 || music.step === 14)) hatAmp += 0.07;
+
+  // backbeat accent
+  if (music.step === 4 || music.step === 12) hatAmp += 0.10 * (0.4 + 0.6 * energy);
+
+  // set hat frequency to feel like a tight click
+  const hatF = 1800 + 1200 * drive;
+  music.hatOsc.freq(hatF);
+
+  // super fast decay via amp ramp
+  music.hatOsc.amp(hatAmp, 0.005);
+  music.hatOsc.amp(0, 0.03);
+
+  // Filter brightness follows movement + signal
+  music.filter.freq(lerp(1400, 4200, drive) + 120 * signal);
+}
+
+function musicAccent() {
+  if (!audioArmed || !musicOn) return;
+  sfxBlip(980, 0.001, 0.03, 0.10);
+}
+
+/* ==========================================================
+   FOOTSTEPS (very light)
+========================================================== */
+function updateFootsteps() { /* optional placeholder */ }
+
+/* ==========================================================
+   TTS
+========================================================== */
+function speakText(txt) {
+  if (!ttsEnabled) return;
+  stopTTS();
+  const u = new SpeechSynthesisUtterance(txt);
+  u.rate = 0.92;
+  u.pitch = 0.96;
+  speaking = true;
+  u.onend = () => { speaking = false; };
+  speechSynthesis.speak(u);
+}
+
+function stopTTS() {
+  if (!ttsEnabled) return;
+  if (speechSynthesis.speaking) speechSynthesis.cancel();
+  speaking = false;
+}
