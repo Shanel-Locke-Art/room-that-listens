@@ -56,11 +56,39 @@ let INTERACT_RADIUS = 86;
 let REVEAL_RADIUS_MULT = 2.8;
 let EXTRA_HIDDEN = 10;
 
+// Extra non-hidden room items (pure flavor, each has its own poem bucket + sprite)
+let EXTRA_DECOR = 20;
+
 /* =========================
    STATIONS (objects)
 ========================= */
 const CORE_IDS = ["lamp", "mirror", "desk", "door"];
+const SIG_TYPES = ["KEY","EYE","KNOT","SPARK","WAVE","MASK"];
 let stations = [];
+
+// Additional room items. Keep ids stable so their sprite + poetry buckets remain consistent.
+const DECOR_IDS = [
+  "mug",
+  "paperclip",
+  "tape",
+  "coin",
+  "feather",
+  "chalk",
+  "glove",
+  "radio",
+  "plant",
+  "candle",
+  "ribbon",
+  "marble",
+  "button",
+  "shell",
+  "clock",
+  "lens",
+  "needle",
+  "map",
+  "stone",
+  "key"
+];
 
 /* =========================
    MODES
@@ -161,8 +189,211 @@ const LINES = {
     "The door waits. It prefers you arrive with a little story first.",
     "A threshold pretends to be a wall.",
     "The hinge holds its breath."
-  ]
+  ],
+  mug: [
+    "Warmth lingers where hands once argued with cold.",
+    "Ceramic holds a small weather inside.",
+    "A rim remembers a pause."
+  ],
+  paperclip: [
+    "A tiny loop refusing to let go.",
+    "Metal binds what the mind keeps scattering.",
+    "Order, in miniature."
+  ],
+  tape: [
+    "Adhesive makes a promise it cannot explain.",
+    "Two edges agree to pretend they were one.",
+    "Silence sealed, imperfectly."
+  ],
+  coin: [
+    "Value is a shine the dark agrees on.",
+    "A small moon you can lose in a pocket.",
+    "Luck clicks against your choices."
+  ],
+  feather: [
+    "Air wrote this with a lighter hand.",
+    "A quiet proof that falling can be soft.",
+    "It points to a bird that already left."
+  ],
+  chalk: [
+    "White dust becomes instruction.",
+    "A line appears, and then becomes a smudge.",
+    "Teaching is temporary handwriting."
+  ],
+  glove: [
+    "Fabric for hands that do not want to touch.",
+    "Protection shaped like a second skin.",
+    "Inside, warmth waits."
+  ],
+  radio: [
+    "Static is a crowd you cannot see.",
+    "A voice arrives broken into sparkles.",
+    "The room tunes itself."
+  ],
+  plant: [
+    "Green insists on continuing.",
+    "Leaves practice patience in small rehearsals.",
+    "A stem learns the angle of hope."
+  ],
+  candle: [
+    "Flame is a thought with a body.",
+    "Wax keeps time by surrendering.",
+    "Light makes shadows honest."
+  ],
+  ribbon: [
+    "A soft line tying nothing to nothing.",
+    "It remembers being a gift.",
+    "Color that refuses to be useful."
+  ],
+  marble: [
+    "A planet small enough to misplace.",
+    "Glass holds a trapped storm of color.",
+    "It rolls toward whatever you avoid."
+  ],
+  button: [
+    "A circle that once closed a person.",
+    "Thread made a quiet commitment here.",
+    "Utility pretending to be decoration."
+  ],
+  shell: [
+    "The ocean left a spiral voicemail.",
+    "Hollow rooms can still sing.",
+    "Salt memory, dry and bright."
+  ],
+  clock: [
+    "Time walks in tight circles.",
+    "The second hand pretends urgency.",
+    "The room measures you back."
+  ],
+  lens: [
+    "Focus is a decision you make with your eyes.",
+    "Glass bends the world into confession.",
+    "Closer is not always clearer."
+  ],
+  needle: [
+    "A sharp answer looking for thread.",
+    "Precision is a kind of courage.",
+    "It points at what you tried to ignore."
+  ],
+  map: [
+    "A promise that space can be understood.",
+    "Paper invents a gentler distance.",
+    "You are here, and still not found."
+  ],
+  stone: [
+    "Weight that does not apologize.",
+    "A pocket-sized piece of forever.",
+    "Stillness with edges."
+  ],
+  key: [
+    "Metal learns the shape of permission.",
+    "A lock imagines surrender.",
+    "Teeth remember a door."
+  ],
 };
+
+// Flavor-only item poetry. Each gets its own small bucket.
+// (LINES is const, but we can still add keys.)
+LINES.mug = [
+  "A mug holds yesterday's heat like a secret.",
+  "Ceramic listens. It never interrupts.",
+  "Steam writes and vanishes, polite as a lie."
+];
+LINES.paperclip = [
+  "A paperclip bends, pretending it was always this shape.",
+  "Metal makes a small promise to keep things together.",
+  "Order, briefly, before the wind revises it."
+];
+LINES.tape = [
+  "Tape remembers contact in a thin, stubborn stripe.",
+  "Adhesion is affection with boundaries.",
+  "Peel it back and hear a tiny confession."
+];
+LINES.coin = [
+  "A coin is a moon you can palm.",
+  "Luck wears fingerprints like jewelry.",
+  "Two sides argue softly in your pocket."
+];
+LINES.feather = [
+  "A feather is gravity learning manners.",
+  "Air carries it like a careful sentence.",
+  "Lightness, practiced until it looks effortless."
+];
+LINES.chalk = [
+  "Chalk is a fossil that wants to be speech.",
+  "It writes in dust, then becomes dust.",
+  "The board keeps the scrape as a quiet weather."
+];
+LINES.glove = [
+  "A glove holds your hand at one remove.",
+  "Touch becomes translated.",
+  "Warmth, but with a filter."
+];
+LINES.radio = [
+  "A radio catches ghosts and calls it music.",
+  "Static is the ocean between stations.",
+  "Somewhere, a voice tries again."
+];
+LINES.plant = [
+  "A plant drinks time one drop at a time.",
+  "Green is the room practicing hope.",
+  "Leaves tilt toward whatever feels like yes."
+];
+LINES.candle = [
+  "A candle spends itself to be seen.",
+  "Wax keeps the shape of patience.",
+  "Flame makes a small altar of air."
+];
+LINES.ribbon = [
+  "A ribbon ties meaning to nothing at all.",
+  "It flutters like a thought that won't land.",
+  "Pretty is another kind of signal."
+];
+LINES.marble = [
+  "A marble is a planet with no obligations.",
+  "Glass holds a storm in miniature.",
+  "Roll it and the future changes direction."
+];
+LINES.button = [
+  "A button is a yes that can be undone.",
+  "Thread stitches silence into place.",
+  "Fasten, and the world behaves."
+];
+LINES.shell = [
+  "A shell is an ear the sea left behind.",
+  "Spirals keep their own slow rhythm.",
+  "Hold it close. Hear the room imitate waves."
+];
+LINES.clock = [
+  "A clock measures longing in neat increments.",
+  "Seconds line up like obedient students.",
+  "Time taps the glass, asking to be let out."
+];
+LINES.lens = [
+  "A lens makes distance negotiable.",
+  "Focus is a kind of choosing.",
+  "Magnify the ordinary until it confesses."
+];
+LINES.needle = [
+  "A needle insists that holes can heal.",
+  "Point, pull, repeat: devotion in a loop.",
+  "Stitch by stitch, a seam becomes a story."
+];
+LINES.map = [
+  "A map is a promise drawn in shortcuts.",
+  "It names the places you haven't met yet.",
+  "Folded paper holds a whole elsewhere."
+];
+LINES.stone = [
+  "A stone is patience you can lift.",
+  "It remembers pressure better than words.",
+  "In its silence, the room feels louder."
+];
+LINES.key = [
+  "A key is a question cut from metal.",
+  "Teeth look for the right dark answer.",
+  "Unlocking is just permission made audible."
+];
 
 const CONNECTORS = [
   "Meanwhile, the pattern keeps listening.",
@@ -513,6 +744,7 @@ function generateStations() {
   const minDist = 310 * S;
   const avoidPlayerDist = 460 * S;
 
+  // Core stations
   for (const id of CORE_IDS) {
     const pos = pickPositionWithSpacing(minDist, avoidPlayerDist, placed);
     placed.push(pos);
@@ -530,6 +762,43 @@ function generateStations() {
     });
   }
 
+  // --------------------------------------------------
+  // DECOR (ambient objects)  with deterministic shuffle
+  // --------------------------------------------------
+  const decorIds = DECOR_IDS.slice();
+  const decorCount = Math.min(EXTRA_DECOR, decorIds.length);
+
+  // Deterministic shuffle
+  const drand = mulberry32((runSeed ^ 0xDEC0DE) >>> 0);
+  for (let i = decorIds.length - 1; i > 0; i--) {
+    const j = Math.floor(drand() * (i + 1));
+    const tmp = decorIds[i];
+    decorIds[i] = decorIds[j];
+    decorIds[j] = tmp;
+  }
+
+  const decorMinDist = 245 * S;
+  const decorAvoidPlayerDist = 340 * S;
+
+  for (let i = 0; i < decorCount; i++) {
+    const id = decorIds[i];
+    const pos = pickPositionWithSpacing(decorMinDist, decorAvoidPlayerDist, placed);
+    placed.push(pos);
+
+    stations.push({
+      kind: "decor",
+      id,
+      label: id.replace(/_/g, " ").toUpperCase(),
+      x: pos.x, y: pos.y,
+      hidden: false,
+      revealed: true,
+      glyphSeed: 0,
+      spriteId: id,
+      fn: () => decorAction(id)
+    });
+  }
+
+  // Hidden SIG nodes
   const spritePool = ["lamp", "mirror", "desk"];
   for (let i = 0; i < EXTRA_HIDDEN; i++) {
     const pos = pickPositionWithSpacing(minDist * 0.72, avoidPlayerDist * 0.28, placed);
@@ -537,6 +806,7 @@ function generateStations() {
 
     const glyphSeed = (runSeed ^ (i * 99991) ^ (pos.x * 13) ^ (pos.y * 7)) >>> 0;
     const spriteId = spritePool[i % spritePool.length];
+    const sigType = SIG_TYPES[(glyphSeed ^ (i * 131)) % SIG_TYPES.length];
 
     stations.push({
       kind: "hidden",
@@ -548,13 +818,15 @@ function generateStations() {
       revealRadius: INTERACT_RADIUS * REVEAL_RADIUS_MULT,
       glyphSeed,
       spriteId,
-      fn: () => hiddenAction(glyphSeed, spriteId)
+      sigType,
+      fn: () => hiddenAction(glyphSeed, spriteId, sigType)
     });
   }
 }
 
 function pickPositionWithSpacing(minDist, avoidPlayerDist, placed) {
-  const tries = 260;
+  // More objects now (core + decor + SIG), so give placement extra attempts.
+  const tries = 520;
   for (let t = 0; t < tries; t++) {
     const x = random(world.pad, world.w - world.pad);
     const y = random(world.pad, world.h - world.pad);
@@ -727,32 +999,6 @@ function drawWorldBorder() {
   rect(12 * S, 12 * S, world.w - 24 * S, world.h - 24 * S, 18 * S);
 }
 
-function nearestStationWorld(preferHidden = false) {
-  let best = null;
-  let bestD = 1e9;
-
-  for (const s of stations) {
-    if (s.hidden && !s.revealed) continue;
-
-    // Optional: if we are preferring hidden, skip core
-    if (preferHidden && s.kind !== "hidden") continue;
-
-    const d = dist(player.x, player.y, s.x, s.y);
-    if (d < bestD) { bestD = d; best = s; }
-  }
-  return { s: best, d: bestD };
-}
-
-function pickInteractTarget() {
-  // 1) If any SIG is close enough, grab the nearest SIG first
-  const h = nearestStationWorld(true);
-  if (h.s && h.d <= INTERACT_RADIUS) return h;
-
-  // 2) Otherwise default to nearest thing
-  const any = nearestStationWorld(false);
-  return any;
-}
-
 function drawStationsWorld() {
   const near = pickInteractTarget();
 
@@ -792,11 +1038,31 @@ function drawStationsWorld() {
 
     pop();
 
-    noStroke();
-    fill(active ? color(0, 255, 170, 255) : color(0, 255, 120, 210));
-    textAlign(CENTER, CENTER);
-    textSize(14 * S);
-    text(s.label, s.x, s.y + 74 * S);
+    // Label fades in only when near
+    const labelNear = INTERACT_RADIUS * 1.25;
+    const labelFar  = INTERACT_RADIUS * 3.6;
+    const tLabel = constrain(1.0 - ((dToPlayer - labelNear) / Math.max(1, (labelFar - labelNear))), 0, 1);
+    const labelA = (active ? 255 : Math.floor(220 * (tLabel * tLabel)));
+
+    if (labelA > 2) {
+
+
+// Label fades in only when near (always visible for the active interact target)
+const labelNear = INTERACT_RADIUS * 1.10;
+const labelFar  = INTERACT_RADIUS * 3.40;
+const tLabel = constrain(
+  1.0 - ((dToPlayer - labelNear) / Math.max(1, (labelFar - labelNear))),
+  0, 1
+);
+const labelA = active ? 255 : Math.floor(220 * (tLabel * tLabel));
+
+if (labelA > 2) {
+  noStroke();
+  fill(0, 255, 170, labelA);
+  textAlign(CENTER, CENTER);
+  textSize(s.kind === "core" ? 14 * S : 12 * S);
+  text(s.label, s.x, s.y + 74 * S);
+}    }
   }
 }
 
@@ -890,13 +1156,69 @@ function drawHiddenGlyph(s, active) {
   }
   endShape(CLOSE);
 
-  // Distinct symbol: eye slash
+  // Distinct SIG type symbol
   stroke(0, 255, 170, 180 * flicker);
-  strokeWeight(2.0 * S);
-  line(-20 * S, 0, 20 * S, 0);
-  line(-14 * S, -10 * S, 14 * S, 10 * S);
+  strokeWeight(2.2 * S);
+  noFill();
 
-  noStroke();
+  const w = 26 * S;
+  const h = 18 * S;
+  const bob = (active ? 2.5 : 1.3) * S * sin(t * 5.0 + s.glyphSeed * 0.002);
+
+  switch (s.sigType || "EYE") {
+    case "KEY":
+      circle(0, -4 * S + bob, 14 * S);
+      line(7 * S, -4 * S + bob, 18 * S, -4 * S + bob);
+      line(14 * S, -7 * S + bob, 14 * S, -1 * S + bob);
+      break;
+
+    case "EYE":
+      beginShape();
+      vertex(-w, 0 + bob);
+      quadraticVertex(0, -h + bob, w, 0 + bob);
+      quadraticVertex(0, h + bob, -w, 0 + bob);
+      endShape();
+      noStroke();
+      fill(0, 255, 170, 180 * flicker);
+      circle(0, 0 + bob, 6 * S);
+      break;
+
+    case "KNOT":
+      stroke(0, 255, 170, 200 * flicker);
+      noFill();
+      beginShape();
+      for (let a = 0; a <= TAU; a += TAU / 24) {
+        const r = 14 * S + 3 * S * sin(2 * a);
+        vertex(cos(a) * r, sin(a) * (10 * S) + bob);
+      }
+      endShape();
+      break;
+
+    case "SPARK":
+      for (let i = 0; i < 8; i++) {
+        const ang = i * (TAU / 8);
+        const rr = (i % 2 === 0 ? 18 : 10) * S;
+        line(0, 0 + bob, cos(ang) * rr, sin(ang) * rr + bob);
+      }
+      break;
+
+    case "WAVE":
+      beginShape();
+      for (let x = -20; x <= 20; x += 4) {
+        const y = sin((x * 0.18) + t * 3.0) * 6 * S + bob;
+        vertex(x * S, y);
+      }
+      endShape();
+      break;
+
+    case "MASK":
+      rect(-16 * S, -10 * S + bob, 32 * S, 20 * S, 6 * S);
+      line(-6 * S, -2 * S + bob, -2 * S, -2 * S + bob);
+      line(2 * S, -2 * S + bob, 6 * S, -2 * S + bob);
+      break;
+  }
+
+noStroke();
   fill(0, 255, 170, active ? 220 : 170);
   textAlign(CENTER, CENTER);
   textSize(12 * S);
@@ -1151,6 +1473,61 @@ function coreAction(id) {
   }
 
   enterFocus(id);
+}
+
+// Flavor-only items: small, non-blocking mutations + their own poem buckets.
+function decorAction(id) {
+  addInteractionPoetry(id);
+
+  // Gentle nudge so they "do something" without derailing the core loop.
+  const h = idHash(id) ^ runSeed;
+  const r = mulberry32(h >>> 0);
+
+  const dz = 1.0 + (r() - 0.5) * 0.06;
+  const dw = (r() - 0.5) * 0.08;
+  const dc = (r() - 0.5) * 0.06;
+
+  fractal.baseZoom = constrain(fractal.baseZoom * dz, 0.6, 18.0);
+  fractal.baseWarp = clamp01(fractal.baseWarp + dw);
+  fractal.baseCenter.x += dc / Math.max(fractal.baseZoom, 0.001);
+  fractal.baseCenter.y -= dc / Math.max(fractal.baseZoom, 0.001);
+
+  // Tiny sonic signature (varies per item)
+  const pick = (h % 3);
+  if (pick === 0) sfxInteractLow();
+  else if (pick === 1) sfxInteractMid();
+  else sfxInteractHigh();
+
+  enterFocus(id);
+}
+
+
+function hiddenAction(glyphSeed, spriteId, sigType) {
+  gainSignal("open");
+  if (act === 2) act2SigCollected++;
+
+  queuePoemLine(pickUniqueLine(LINES.hidden, 0x1DD33));
+  sfxInteractMid();
+
+  focusId = "hidden";
+  focusImg = getHiddenFocusCard(glyphSeed, spriteId, sigType);
+  mode = "focus";
+  focusZoom = 1.35;
+  focusZoomTarget = 1.35;
+}
+
+function mutateRoom() {
+  fractal.baseWarp += 0.2;
+  fractal.iters += 60;
+
+  signal = Math.min(signal + 1, 6);
+
+  for (const s of stations) {
+    if (s.kind === "core" && s.id !== "door") {
+      s.x += random(-120, 120);
+      s.y += random(-120, 120);
+    }
+  }
 }
 
 function enterFocus(id) {
@@ -1679,7 +2056,7 @@ function renderFractalLayer() {
 /* ==========================================================
    HIDDEN FOCUS CARD
 ========================================================== */
-function getHiddenFocusCard(glyphSeed, spriteId) {
+function getHiddenFocusCard(glyphSeed, spriteId, sigType) {
   const key = glyphSeed + ":" + spriteId + ":" + CW + "x" + CH;
   if (hiddenFocusCache.has(key)) return hiddenFocusCache.get(key);
 
@@ -1764,8 +2141,262 @@ function getItemSpriteBase(id) {
     for (let y = 4; y <= 18; y += 2) { px(8, y, DIM); px(16, y, DIM); }
     px(16, 12);
   } else {
-    for (let y = 8; y <= 14; y += 2) for (let x = 8; x <= 14; x += 2) px(x, y);
+  // Object-specific chunky silhouettes (24x24, 2x2 pixels)
+  const put = (x, y, c = ON) => px(x, y, c);
+  const row = (x0, x1, y, c = ON) => { for (let x = x0; x <= x1; x += 2) put(x, y, c); };
+  const col = (x, y0, y1, c = ON) => { for (let y = y0; y <= y1; y += 2) put(x, y, c); };
+
+  switch (id) {
+    case "chair": {
+      row(8, 16, 14);          // seat
+      row(8, 16, 16, DIM);
+      col(8, 18, 20, DIM);     // legs
+      col(16, 18, 20, DIM);
+      col(8, 8, 12);           // back posts
+      col(16, 8, 12);
+      row(8, 16, 8, DIM);      // top back
+      break;
+    }
+
+    case "window": {
+      row(6, 18, 6);
+      row(6, 18, 18);
+      col(6, 8, 16);
+      col(18, 8, 16);
+      col(12, 8, 16, DIM);     // pane cross
+      row(8, 16, 12, DIM);
+      put(10, 10, DIM); put(14, 14, DIM);
+      break;
+    }
+
+    case "bookshelf": {
+      col(6, 6, 20);
+      col(18, 6, 20);
+      row(6, 18, 6);
+      row(6, 18, 20);
+      row(6, 18, 12, DIM);     // shelves
+      row(6, 18, 16, DIM);
+      // books
+      col(8, 8, 10, DIM);
+      col(10, 8, 14);
+      col(12, 8, 10, DIM);
+      col(14, 8, 14);
+      col(16, 8, 10, DIM);
+      break;
+    }
+
+    case "clock": {
+      row(10, 14, 6, DIM);
+      row(8, 16, 8);
+      row(8, 16, 16);
+      row(10, 14, 18, DIM);
+      col(6, 10, 14);
+      col(18, 10, 14);
+      put(12, 12, DIM);        // center
+      put(12, 10);             // hour hand
+      put(14, 12);             // minute hand
+      break;
+    }
+
+    case "rug": {
+      row(8, 16, 16, DIM);
+      row(6, 18, 14);
+      row(6, 18, 18);
+      col(6, 16, 18);
+      col(18, 16, 18);
+      put(10, 16); put(14, 16);
+      break;
+    }
+
+    case "plant": {
+      // pot
+      row(10, 14, 18, DIM);
+      row(10, 14, 20, DIM);
+      col(10, 16, 18, DIM);
+      col(14, 16, 18, DIM);
+      // leaves
+      put(12, 6);
+      put(10, 8); put(14, 8);
+      row(8, 16, 10, DIM);
+      row(10, 14, 12);
+      put(8, 12, DIM); put(16, 12, DIM);
+      break;
+    }
+
+    case "radiator": {
+      row(8, 16, 8, DIM);
+      row(8, 16, 20, DIM);
+      for (let x = 8; x <= 16; x += 4) col(x, 10, 18);
+      col(18, 10, 18, DIM);
+      break;
+    }
+
+    case "picture": {
+      row(6, 18, 8);
+      row(6, 18, 18);
+      col(6, 10, 16);
+      col(18, 10, 16);
+      // simple subject silhouette
+      put(10, 12, DIM); put(12, 12, DIM); put(14, 12, DIM);
+      put(12, 14);
+      break;
+    }
+
+    case "drawer": {
+      row(8, 16, 10);
+      row(8, 16, 18);
+      col(8, 12, 16);
+      col(16, 12, 16);
+      row(10, 14, 14, DIM);    // drawer line
+      put(12, 16, DIM);        // knob
+      break;
+    }
+
+    case "teacup": {
+      row(10, 14, 12);
+      row(10, 14, 14);
+      col(10, 12, 14);
+      col(14, 12, 14);
+      // handle
+      put(16, 12, DIM);
+      put(18, 14, DIM);
+      put(16, 16, DIM);
+      // steam hint
+      put(12, 8, DIM);
+      put(10, 6, DIM);
+      break;
+    }
+
+    case "coat": {
+      // hook
+      put(12, 6, DIM);
+      // shoulders
+      row(8, 16, 10);
+      // body
+      col(8, 12, 18);
+      col(16, 12, 18);
+      row(10, 14, 20, DIM);
+      // sleeves
+      put(6, 14, DIM); put(18, 14, DIM);
+      put(6, 16, DIM); put(18, 16, DIM);
+      break;
+    }
+
+    case "ceiling_fan": {
+      put(12, 12, DIM);
+      // blades
+      row(6, 10, 12);
+      row(14, 18, 12);
+      col(12, 6, 10);
+      col(12, 14, 18);
+      put(10, 10, DIM); put(14, 10, DIM);
+      put(10, 14, DIM); put(14, 14, DIM);
+      break;
+    }
+
+    case "wastebasket": {
+      // rim
+      row(10, 14, 10);
+      // sides
+      col(10, 12, 18);
+      col(14, 12, 18);
+      // base
+      row(10, 14, 20, DIM);
+      put(12, 16, DIM);
+      break;
+    }
+
+    case "typewriter": {
+      // body
+      row(8, 16, 14);
+      row(8, 16, 16);
+      row(8, 16, 18, DIM);
+      col(8, 14, 18);
+      col(16, 14, 18);
+      // keys row
+      put(10, 16, DIM); put(12, 16, DIM); put(14, 16, DIM);
+      // paper
+      row(10, 14, 10, DIM);
+      col(10, 8, 10, DIM);
+      col(14, 8, 10, DIM);
+      break;
+    }
+
+    case "light_switch": {
+      row(10, 14, 8, DIM);
+      row(10, 14, 18, DIM);
+      col(10, 10, 16, DIM);
+      col(14, 10, 16, DIM);
+      // toggle
+      col(12, 12, 16);
+      break;
+    }
+
+    case "suitcase": {
+      row(8, 16, 12);
+      row(8, 16, 20);
+      col(8, 14, 18);
+      col(16, 14, 18);
+      // handle
+      row(10, 14, 10, DIM);
+      put(10, 8, DIM); put(14, 8, DIM);
+      break;
+    }
+
+    case "radio": {
+      row(8, 16, 12);
+      row(8, 16, 20);
+      col(8, 14, 18);
+      col(16, 14, 18);
+      // speaker grid
+      put(10, 16, DIM); put(12, 16, DIM); put(14, 16, DIM);
+      put(10, 18, DIM); put(12, 18, DIM); put(14, 18, DIM);
+      // antenna
+      put(16, 10, DIM); put(18, 8, DIM);
+      break;
+    }
+
+    case "notebook": {
+      row(8, 16, 10);
+      row(8, 16, 20);
+      col(8, 12, 18);
+      col(16, 12, 18);
+      // spine
+      col(10, 12, 18, DIM);
+      // lines
+      row(12, 14, 14, DIM);
+      row(12, 14, 16, DIM);
+      break;
+    }
+
+    case "key": {
+      // ring
+      put(10, 12, DIM); put(12, 10, DIM); put(14, 12, DIM); put(12, 14, DIM);
+      // shaft
+      row(14, 18, 12);
+      // teeth
+      put(18, 14, DIM);
+      put(16, 16, DIM);
+      break;
+    }
+
+    case "shadow": {
+      // soft blob, lower contrast
+      row(8, 16, 18, DIM);
+      row(6, 18, 20, DIM);
+      put(10, 16, DIM); put(14, 16, DIM);
+      break;
+    }
+
+    default: {
+      // fallback: small block, still readable
+      row(10, 14, 12);
+      row(10, 14, 14, DIM);
+      row(10, 14, 16);
+      break;
+    }
   }
+}
 
   itemSpriteCache.set(id, g);
   return g;

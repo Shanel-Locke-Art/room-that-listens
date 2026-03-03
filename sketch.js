@@ -56,12 +56,39 @@ let INTERACT_RADIUS = 86;
 let REVEAL_RADIUS_MULT = 2.8;
 let EXTRA_HIDDEN = 10;
 
+// Extra non-hidden room items (pure flavor, each has its own poem bucket + sprite)
+let EXTRA_DECOR = 20;
+
 /* =========================
    STATIONS (objects)
 ========================= */
 const CORE_IDS = ["lamp", "mirror", "desk", "door"];
 const SIG_TYPES = ["KEY","EYE","KNOT","SPARK","WAVE","MASK"];
 let stations = [];
+
+// Additional room items. Keep ids stable so their sprite + poetry buckets remain consistent.
+const DECOR_IDS = [
+  "mug",
+  "paperclip",
+  "tape",
+  "coin",
+  "feather",
+  "chalk",
+  "glove",
+  "radio",
+  "plant",
+  "candle",
+  "ribbon",
+  "marble",
+  "button",
+  "shell",
+  "clock",
+  "lens",
+  "needle",
+  "map",
+  "stone",
+  "key"
+];
 
 /* =========================
    MODES
@@ -165,6 +192,109 @@ const LINES = {
   ]
 };
 
+// Flavor-only item poetry. Each gets its own small bucket.
+// (LINES is const, but we can still add keys.)
+LINES.mug = [
+  "A mug holds yesterday's heat like a secret.",
+  "Ceramic listens. It never interrupts.",
+  "Steam writes and vanishes, polite as a lie."
+];
+LINES.paperclip = [
+  "A paperclip bends, pretending it was always this shape.",
+  "Metal makes a small promise to keep things together.",
+  "Order, briefly, before the wind revises it."
+];
+LINES.tape = [
+  "Tape remembers contact in a thin, stubborn stripe.",
+  "Adhesion is affection with boundaries.",
+  "Peel it back and hear a tiny confession."
+];
+LINES.coin = [
+  "A coin is a moon you can palm.",
+  "Luck wears fingerprints like jewelry.",
+  "Two sides argue softly in your pocket."
+];
+LINES.feather = [
+  "A feather is gravity learning manners.",
+  "Air carries it like a careful sentence.",
+  "Lightness, practiced until it looks effortless."
+];
+LINES.chalk = [
+  "Chalk is a fossil that wants to be speech.",
+  "It writes in dust, then becomes dust.",
+  "The board keeps the scrape as a quiet weather."
+];
+LINES.glove = [
+  "A glove holds your hand at one remove.",
+  "Touch becomes translated.",
+  "Warmth, but with a filter."
+];
+LINES.radio = [
+  "A radio catches ghosts and calls it music.",
+  "Static is the ocean between stations.",
+  "Somewhere, a voice tries again."
+];
+LINES.plant = [
+  "A plant drinks time one drop at a time.",
+  "Green is the room practicing hope.",
+  "Leaves tilt toward whatever feels like yes."
+];
+LINES.candle = [
+  "A candle spends itself to be seen.",
+  "Wax keeps the shape of patience.",
+  "Flame makes a small altar of air."
+];
+LINES.ribbon = [
+  "A ribbon ties meaning to nothing at all.",
+  "It flutters like a thought that won't land.",
+  "Pretty is another kind of signal."
+];
+LINES.marble = [
+  "A marble is a planet with no obligations.",
+  "Glass holds a storm in miniature.",
+  "Roll it and the future changes direction."
+];
+LINES.button = [
+  "A button is a yes that can be undone.",
+  "Thread stitches silence into place.",
+  "Fasten, and the world behaves."
+];
+LINES.shell = [
+  "A shell is an ear the sea left behind.",
+  "Spirals keep their own slow rhythm.",
+  "Hold it close. Hear the room imitate waves."
+];
+LINES.clock = [
+  "A clock measures longing in neat increments.",
+  "Seconds line up like obedient students.",
+  "Time taps the glass, asking to be let out."
+];
+LINES.lens = [
+  "A lens makes distance negotiable.",
+  "Focus is a kind of choosing.",
+  "Magnify the ordinary until it confesses."
+];
+LINES.needle = [
+  "A needle insists that holes can heal.",
+  "Point, pull, repeat: devotion in a loop.",
+  "Stitch by stitch, a seam becomes a story."
+];
+LINES.map = [
+  "A map is a promise drawn in shortcuts.",
+  "It names the places you haven't met yet.",
+  "Folded paper holds a whole elsewhere."
+];
+LINES.stone = [
+  "A stone is patience you can lift.",
+  "It remembers pressure better than words.",
+  "In its silence, the room feels louder."
+];
+LINES.key = [
+  "A key is a question cut from metal.",
+  "Teeth look for the right dark answer.",
+  "Unlocking is just permission made audible."
+];
+
 const CONNECTORS = [
   "Meanwhile, the pattern keeps listening.",
   "Because you touched it, it becomes truer.",
@@ -207,6 +337,7 @@ const MUTATION_LINES = [
    TYPEWRITER UI
 ========================= */
 let poemQueue = [];
+let poemLog = [];
 let typingLine = "";
 let typingIndex = 0;
 let isTyping = false;
@@ -531,6 +662,28 @@ function generateStations() {
     });
   }
 
+  // Extra flavor items (keep spacing looser than hidden, tighter than core)
+  const decorMinDist = 230 * S;
+  const decorAvoidPlayer = 360 * S;
+  const decorCount = Math.min(EXTRA_DECOR, DECOR_IDS.length);
+  for (let i = 0; i < decorCount; i++) {
+    const id = DECOR_IDS[i];
+    const pos = pickPositionWithSpacing(decorMinDist, decorAvoidPlayer, placed);
+    placed.push(pos);
+
+    stations.push({
+      kind: "decor",
+      id,
+      label: "", // keep the room readable; rely on sprite + highlight
+      x: pos.x, y: pos.y,
+      hidden: false,
+      revealed: true,
+      glyphSeed: 0,
+      spriteId: id,
+      fn: () => decorAction(id)
+    });
+  }
+
   const spritePool = ["lamp", "mirror", "desk"];
   for (let i = 0; i < EXTRA_HIDDEN; i++) {
     const pos = pickPositionWithSpacing(minDist * 0.72, avoidPlayerDist * 0.28, placed);
@@ -558,7 +711,8 @@ function generateStations() {
 }
 
 function pickPositionWithSpacing(minDist, avoidPlayerDist, placed) {
-  const tries = 260;
+  // More objects now (core + decor + SIG), so give placement extra attempts.
+  const tries = 520;
   for (let t = 0; t < tries; t++) {
     const x = random(world.pad, world.w - world.pad);
     const y = random(world.pad, world.h - world.pad);
@@ -770,11 +924,19 @@ function drawStationsWorld() {
 
     pop();
 
-    noStroke();
-    fill(active ? color(0, 255, 170, 255) : color(0, 255, 120, 210));
-    textAlign(CENTER, CENTER);
-    textSize(14 * S);
-    text(s.label, s.x, s.y + 74 * S);
+    // Label fades in only when near
+    const labelNear = INTERACT_RADIUS * 1.25;
+    const labelFar  = INTERACT_RADIUS * 3.6;
+    const tLabel = constrain(1.0 - ((dToPlayer - labelNear) / Math.max(1, (labelFar - labelNear))), 0, 1);
+    const labelA = (active ? 255 : Math.floor(220 * (tLabel * tLabel)));
+
+    if (labelA > 2) {
+      noStroke();
+      fill(0, 255, 170, labelA);
+      textAlign(CENTER, CENTER);
+      textSize(14 * S);
+      text(s.label, s.x, s.y + 74 * S);
+    }
   }
 }
 
@@ -1187,6 +1349,32 @@ function coreAction(id) {
   enterFocus(id);
 }
 
+// Flavor-only items: small, non-blocking mutations + their own poem buckets.
+function decorAction(id) {
+  addInteractionPoetry(id);
+
+  // Gentle nudge so they "do something" without derailing the core loop.
+  const h = idHash(id) ^ runSeed;
+  const r = mulberry32(h >>> 0);
+
+  const dz = 1.0 + (r() - 0.5) * 0.06;
+  const dw = (r() - 0.5) * 0.08;
+  const dc = (r() - 0.5) * 0.06;
+
+  fractal.baseZoom = constrain(fractal.baseZoom * dz, 0.6, 18.0);
+  fractal.baseWarp = clamp01(fractal.baseWarp + dw);
+  fractal.baseCenter.x += dc / Math.max(fractal.baseZoom, 0.001);
+  fractal.baseCenter.y -= dc / Math.max(fractal.baseZoom, 0.001);
+
+  // Tiny sonic signature (varies per item)
+  const pick = (h % 3);
+  if (pick === 0) sfxInteractLow();
+  else if (pick === 1) sfxInteractMid();
+  else sfxInteractHigh();
+
+  enterFocus(id);
+}
+
 
 function hiddenAction(glyphSeed, spriteId, sigType) {
   gainSignal("open");
@@ -1485,20 +1673,68 @@ function gainSignal(reason = "sig") {
 function addInteractionPoetry(id) {
   history.push(id);
 
-  if (history.length >= 2 && random() < 0.45) {
-    queuePoemLine(pickUniqueLine(CONNECTORS, 0xC0FFEE));
-  }
+  const nonDoorCount = history.filter(h => h !== "door").length;
+
+  // The more you interact, the more lines the room writes back.
+  // 1 line early, then gradually ramps up.
+  let linesThisHit = 1 + Math.floor(Math.max(0, nonDoorCount - 1) / 2); // 1,1,2,2,3...
+  if (signal >= 3) linesThisHit += 1;
+  if (signal >= 5) linesThisHit += 1;
+  linesThisHit = Math.min(linesThisHit, 6);
+
+  // Door interactions should not spam the HUD.
+  if (id === "door") linesThisHit = 1;
+
+  const r = mulberry32((runSeed ^ idHash(id) ^ (history.length * 0x9E3779B9)) >>> 0);
 
   const bucket = LINES[id] || ["Something responds, quietly."];
-  queuePoemLine(pickUniqueLine(bucket, idHash(id)));
 
-  if (random() < 0.25) queuePoemLine(pickUniqueLine(GLITCH_LINES, 0xA117C));
+  // A small chance to bridge with a connector when there's context.
+  if (history.length >= 2 && r() < 0.55) {
+    queuePoemLine(pickUniqueLine(CONNECTORS, id + ":connector:" + history.length));
+  }
+
+  // Always include at least one object-specific line.
+  queuePoemLine(pickUniqueLine(bucket, id + ":base:" + history.length));
+
+  // Then add extra lines based on growth.
+  for (let k = 1; k < linesThisHit; k++) {
+    const roll = r();
+
+    // Prefer deeper vocab as SIGNAL grows.
+    if (signal > 0 && roll < 0.26) {
+      queuePoemLine(pickUniqueLine(SIGNAL_LINES, id + ":signal:" + k));
+      continue;
+    }
+    if (signal > 1 && roll < 0.44) {
+      queuePoemLine(pickUniqueLine(MUTATION_LINES, id + ":mut:" + k));
+      continue;
+    }
+
+    // Occasional glitch flavor.
+    if (roll < 0.58) {
+      queuePoemLine(pickUniqueLine(GLITCH_LINES, id + ":glitch:" + k));
+      continue;
+    }
+
+    // Otherwise, echo the object bucket again with a different salt.
+    queuePoemLine(pickUniqueLine(bucket, id + ":echo:" + k));
+  }
+}
+
+function getPoemLinesForFinal() {
+  // Include completed lines, any currently-typing line, and anything queued.
+  const out = [];
+  for (const l of poemLog) out.push(l);
+  if (heldLine && heldLine.trim().length) out.push(heldLine);
+  for (const l of poemQueue) out.push(l);
+  return out;
 }
 
 function buildFinalPoemText() {
   const rand = mulberry32((runSeed ^ 0xABCDEF) >>> 0);
 
-  const stanza = [
+  const ending = [
     pickFrom(ENDING_LINES, rand),
     pickFrom(ENDING_LINES, rand),
     pickFrom(ENDING_LINES, rand)
@@ -1518,9 +1754,20 @@ function buildFinalPoemText() {
   if (signal >= 3) machineBonus.push("The room admits it has been editing you too.");
   if (signal >= 5) machineBonus.push("A private vocabulary opens, and it does not close politely.");
 
+  const bodyLines = getPoemLinesForFinal();
+
+  // Chunk into small stanzas so it reads like a poem, not a log.
+  const stanzas = [];
+  const stanzaSize = 4;
+  for (let i = 0; i < bodyLines.length; i += stanzaSize) {
+    stanzas.push(bodyLines.slice(i, i + stanzaSize).join("\n"));
+  }
+
   return [
     header,
-    stanza.join("\n"),
+    stanzas.join("\n\n"),
+    "",
+    ending.join("\n"),
     "",
     ...(machineBonus.length ? ["SIGNAL:", ...machineBonus, ""] : []),
     "Press ESC to return."
@@ -1548,6 +1795,7 @@ function pickUniqueLine(bucket, salt) {
 ========================================================== */
 function resetTypewriterState() {
   poemQueue = [];
+  poemLog = [];
   typingLine = "";
   typingIndex = 0;
   isTyping = false;
@@ -1594,7 +1842,14 @@ function updateTypewriter() {
       sfxBlip(f, 0.001, 0.02, 0.10);
     }
   } else {
+    // commit completed line to log
+    if (typingLine && typingLine.length) {
+      poemLog.push(typingLine);
+      // keep memory bounded
+      if (poemLog.length > 240) poemLog.shift();
+    }
     isTyping = false;
+    heldLine = "";
   }
 }
 
@@ -1618,6 +1873,10 @@ function rebuildPoemDisplay() {
     ? ("SIGNAL " + signal + "/6: withheld words unlocked.")
     : "No SIGNAL yet: SIG nodes are withheld words.";
 
+  // Show the most recent lines so the poem feels like it is accumulating.
+  const keep = 6;
+  const recent = poemLog.slice(Math.max(0, poemLog.length - keep));
+
   const cursor = cursorOn ? "█" : " ";
   const focused = (heldLine || "") + cursor;
 
@@ -1626,6 +1885,7 @@ function rebuildPoemDisplay() {
     subtitle,
     signalLine,
     "",
+    ...recent,
     focused
   ].join("\n");
 }
@@ -1827,7 +2087,74 @@ function getItemSpriteBase(id) {
     for (let y = 4; y <= 18; y += 2) { px(8, y, DIM); px(16, y, DIM); }
     px(16, 12);
   } else {
-    for (let y = 8; y <= 14; y += 2) for (let x = 8; x <= 14; x += 2) px(x, y);
+    // Procedural sprites for any non-core object id.
+    // Deterministic per id so each item keeps its own look.
+    const h = idHash(id);
+    const r = mulberry32(h);
+    const shape = Math.floor(r() * 7);
+
+    const put = (x, y, c = ON) => px(x, y, c);
+    const putRow = (x0, x1, y, c = ON) => { for (let x = x0; x <= x1; x += 2) put(x, y, c); };
+    const putCol = (x, y0, y1, c = ON) => { for (let y = y0; y <= y1; y += 2) put(x, y, c); };
+
+    // Small accent pixels (gives every sprite a "glint")
+    const ax = 6 + (h % 6) * 2;
+    const ay = 6 + ((h >>> 5) % 6) * 2;
+
+    switch (shape) {
+      case 0: // TOTEM
+        putCol(12, 6, 18);
+        putRow(8, 16, 10, DIM);
+        putRow(8, 16, 14, DIM);
+        put(10, 8); put(14, 8);
+        break;
+      case 1: // RING
+        for (let x = 8; x <= 16; x += 2) { put(x, 8, DIM); put(x, 16, DIM); }
+        for (let y = 10; y <= 14; y += 2) { put(8, y, DIM); put(16, y, DIM); }
+        put(12, 8); put(12, 16);
+        break;
+      case 2: // BOOK
+        putRow(8, 16, 8);
+        putRow(8, 16, 16);
+        putCol(8, 10, 14);
+        putCol(16, 10, 14);
+        putCol(12, 10, 14, DIM);
+        break;
+      case 3: // BOTTLE
+        put(12, 6, DIM);
+        putRow(10, 14, 8, DIM);
+        putCol(10, 10, 16);
+        putCol(14, 10, 16);
+        putRow(10, 14, 18);
+        break;
+      case 4: // STAR
+        put(12, 8);
+        put(12, 10);
+        putRow(8, 16, 12, DIM);
+        put(10, 10, DIM);
+        put(14, 10, DIM);
+        put(10, 14, DIM);
+        put(14, 14, DIM);
+        put(12, 16);
+        break;
+      case 5: // DIAMOND
+        put(12, 8);
+        putRow(10, 14, 10, DIM);
+        putRow(8, 16, 12);
+        putRow(10, 14, 14, DIM);
+        put(12, 16);
+        break;
+      default: // CHIP
+        putRow(8, 16, 8);
+        putRow(8, 16, 16);
+        putCol(8, 10, 14);
+        putCol(16, 10, 14);
+        put(12, 12, DIM);
+        put(14, 14, DIM);
+        break;
+    }
+
+    put(ax, ay, [180, 255, 220, 220]);
   }
 
   itemSpriteCache.set(id, g);
