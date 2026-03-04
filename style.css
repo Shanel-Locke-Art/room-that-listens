@@ -7,7 +7,6 @@
   --crt-dim:rgba(51,255,136,.7);
 }
 
-/* Base layout */
 html, body{
   margin:0;
   padding:0;
@@ -15,12 +14,34 @@ html, body{
 }
 
 body{
+  height:100%;
   background:var(--crt-bg);
   color:var(--crt-text);
   font-family:'VT323', monospace;
-  overflow:hidden;
+  overflow:hidden; /* desktop: no page scroll */
+  font-size: clamp(16px, 1.4vw, 20px); /* responsive type */
+  line-height:1.35;
 }
 
+.panel-title{
+  font-size:30px;
+  color:#ff2a2a;
+  font-weight:bold;
+
+  letter-spacing:1px;
+  margin-bottom:6px;
+
+  text-shadow:0 0 10px rgba(255,42,42,.35);
+}
+
+.control-label{
+  color:#ff2a2a;
+  letter-spacing:.5px;
+
+  text-shadow:
+    0 0 6px rgba(255,42,42,.6),
+    0 0 12px rgba(255,42,42,.35);
+}
 /* =========================
    HUD LAYOUT
 ========================= */
@@ -29,24 +50,28 @@ body{
   box-sizing:border-box;
 
   display:grid;
-  grid-template-columns: 1.25fr 0.75fr;
-  gap: 12px;
-
-  padding: 12px 14px;
+  grid-template-columns: minmax(0, 1.7fr) minmax(260px, 0.6fr);
+  gap: 10px;
+  padding: 8px 10px;
 }
 
 .hud-left{
   min-height:0;
   display:flex;
   flex-direction:column;
-  gap:10px;
+  gap:8px;
 }
 
 .hud-right{
+  min-height:0;
   min-width:0;
   display:flex;
   flex-direction:column;
-  gap:12px;
+  gap:8px;
+
+  /* if the right side gets tall, it scrolls instead of crushing the game */
+  overflow:auto;
+  padding-right:4px;
 }
 
 /* =========================
@@ -57,79 +82,84 @@ body{
   background:var(--crt-panel-strong);
   box-shadow:0 0 8px rgba(0,255,102,.25);
 
-  padding:10px 12px;
+  padding:6px 10px;
   margin:0;
 
-  font-size:18px;
-  line-height:1.15;
-  letter-spacing:.6px;
+  font-size:28px;     /* larger title */
+  font-weight:normal;
+  letter-spacing:1px;
+
+  color:#ff2a2a;      /* red title */
+
+  text-shadow:
+    0 0 8px rgba(255,42,42,.55),
+    0 0 16px rgba(255,42,42,.25);
 
   white-space:pre-wrap;
-  max-height:56px;
-  overflow:hidden;
-}
-
-#prompt.urgent{
-  color:#ff2a2a;
-  text-shadow:0 0 10px rgba(255,42,42,.55);
 }
 
 /* Poem log (HUD style, not a scroll box) */
 .poem{
   margin:0;
-  padding:10px 12px 22px 12px; /* extra bottom space */
+  padding:6px 8px 12px 8px;
 
   background:var(--crt-panel);
   border:2px solid var(--crt-border);
   box-shadow:0 0 8px rgba(0,255,102,.25);
 
-  font-size:18px;
+  font-size:20px;
   line-height:1.35;
   letter-spacing:.6px;
-  white-space:pre-wrap;
 
+  white-space:pre-wrap;
   max-height:145px;
   overflow:hidden;
 }
 
+/* previous lines fade */
 .poem span{
-  opacity:.55;
+  opacity:.45;
+  color:var(--crt-text);
 }
 
+/* CURRENT typing line */
 .poem span:last-child{
   opacity:1;
-  color:#aaffcc;
+  color:#66ffd1;
+
   text-shadow:
-    0 0 6px rgba(0,255,170,.7),
-    0 0 12px rgba(0,255,170,.35);
+    0 0 4px #00ffc8,
+    0 0 10px #00ffc8,
+    0 0 18px rgba(0,255,200,.8),
+    0 0 32px rgba(0,255,200,.5);
 }
 
 /* =========================
    GAME VIEW (UNDER POEM)
 ========================= */
+/* game area fills whatever space is left in the left column */
 .game-frame{
   flex: 1 1 auto;
-  min-height:0;
-  width:100%;
+  min-height: 0;
+  width: 100%;
 
   display:flex;
-  align-items:center;
-  justify-content:center;
+  align-items:stretch;
+  justify-content:stretch;
 
-  border:2px solid var(--crt-border);
-  box-shadow:
-    0 0 10px rgba(0,255,102,.35),
-    inset 0 0 12px rgba(0,255,102,.18);
+  background: transparent;
+  border: 1px solid var(--crt-border);
+  box-shadow: 0 0 6px rgba(0,255,102,.35);
+  border-radius: 4px;
 
-  border-radius:6px;
   overflow:hidden;
-  padding:0%;
+  padding:0;
 }
 
 .game-frame canvas{
   display:block;
-  width:100%;
-  height:100%;
+  width:100% !important;
+  height:100% !important;
 }
 
 /* =========================
@@ -149,12 +179,12 @@ body{
 }
 
 .controls-box{
-  font-size:19px;
+  font-size:inherit;
   line-height:1.25;
 }
 
 .howto-box{
-  font-size:18px;
+  font-size:inherit;
   line-height:1.35;
 }
 
@@ -170,21 +200,75 @@ body{
 }
 
 /* =========================
+   CURSOR EFFECT
+========================= */
+.typing-line{
+  opacity:1;
+  color:#66ffd1;
+  text-shadow:
+    0 0 4px #00ffc8,
+    0 0 10px #00ffc8,
+    0 0 18px rgba(0,255,200,.8),
+    0 0 32px rgba(0,255,200,.5);
+}
+.cursor{
+  color:#66ffd1;
+  text-shadow:
+    0 0 6px #00ffc8,
+    0 0 12px #00ffc8,
+    0 0 24px rgba(0,255,200,.8);
+  animation: cursorBlink 1s infinite;
+}
+@keyframes cursorBlink{
+  0%,50%,100%{opacity:1;}
+  25%,75%{opacity:.2;}
+}
+
+/* =========================
    RESPONSIVE
 ========================= */
+/* Mobile: single column, allow page scroll */
 @media (max-width: 820px){
-  body{ overflow:auto; }  /* allow scroll on small screens */
+
+  body{
+    overflow:auto; /* allow scrolling on phones */
+  }
 
   .hud-top{
     height:auto;
-    grid-template-columns:1fr;
+    grid-template-columns: 1fr;
+    gap:10px;
   }
 
-  .poem{
-    max-height:110px;
+  .hud-left{
+    order:1;
+  }
+
+  .hud-right{
+    order:2;
+    overflow:visible;
   }
 
   .game-frame{
-    max-height:none;
+    flex:0 0 auto;
+
+    /* stable mobile game size */
+    height: min(65vh, 500px);
+    width:100%;
+
+    border-radius:6px;
   }
+
+  .prompt{
+    font-size:24px;
+  }
+
+  .panel-title{
+    font-size:24px;
+  }
+
+  .poem{
+    max-height:120px;
+  }
+
 }

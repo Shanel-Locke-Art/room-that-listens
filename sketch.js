@@ -344,8 +344,6 @@ function windowResized() {
 ========================================================== */
 function computeCanvasSize() {
   const frame = document.getElementById("game-frame");
-
-  // fallback
   let w = Math.max(320, window.innerWidth - 40);
   let h = Math.max(240, window.innerHeight - 220);
 
@@ -356,12 +354,8 @@ function computeCanvasSize() {
     const padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
     const padY = (parseFloat(cs.paddingTop)  || 0) + (parseFloat(cs.paddingBottom) || 0);
 
-    const fw = Math.max(320, Math.floor(rect.width  - padX));
-    const fh = Math.max(240, Math.floor(rect.height - padY));
-
-    const side = Math.floor(Math.min(fw, fh)); // force square canvas to fit
-    w = side;
-    h = side;
+    w = Math.max(1, Math.floor(rect.width  - padX));
+    h = Math.max(1, Math.floor(rect.height - padY));
   }
 
   CW = w;
@@ -1635,16 +1629,17 @@ function rebuildPoemDisplay() {
     ? ("SIGNAL " + signal + "/6: withheld words unlocked.")
     : "No SIGNAL yet: SIG nodes are withheld words.";
 
-  const cursor = cursorOn ? "█" : " ";
+    const cursor = cursorOn ? '<span class="cursor">█</span>' : " ";
   const focused = (heldLine || "") + cursor;
 
-  poemEl.textContent = [
-    titleA + " " + titleB + ".",
-    subtitle,
-    signalLine,
-    "",
-    focused
-  ].join("\n");
+  // Render as HTML so cursor span styles work
+  poemEl.innerHTML = [
+    `<span>${titleA} ${titleB}.</span>`,
+    `<span>${subtitle}</span>`,
+    `<span>${signalLine}</span>`,
+    `<span>&nbsp;</span>`,
+    `<span class="typing-line">${focused}</span>`
+  ].join("<br>");
 }
 
 /* ==========================================================
