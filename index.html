@@ -13,18 +13,11 @@
 <body>
   <header class="hud-top">
 
-    <div class="hud-left">
-      <div id="prompt" class="prompt">
-        Move through the room. Interact with at least two objects, then the door.
-      </div>
+   <!-- ACT box (left column, row 1) -->
+    <div id="prompt" class="prompt"></div>
 
-      <pre id="poem" class="poem"></pre>
-
-      <!-- Single game mount point (only one on the page) -->
-      <div id="game-frame" class="game-frame"></div>
-    </div>
-
-    <div class="hud-right">
+    <!-- Right column info (right column, spans rows 1-2) -->
+    <div class="rightpanels">
       <div class="controls-box">
         <div class="panel-title">Controls</div>
         <div><span class="control-label">Move:</span> WASD or Arrows</div>
@@ -32,37 +25,28 @@
         <div><span class="control-label">Zoom:</span> Mouse Wheel</div>
         <div><span class="control-label">Close:</span> Esc</div>
         <div><span class="control-label">Speak Final:</span> Space</div>
+        <div><span class="control-label">Find Door:</span> Q</div>
         <div><span class="control-label">Restart:</span> R</div>
       </div>
 
       <div class="howto-box">
         <div class="panel-title">How to Play</div>
-
-        <div class="howto-p">
-          This is a collaboration between you and the computer.
-          You do the noticing and choosing.
-          The computer does the remembering and remixing.
-        </div>
-
-        <div class="howto-p">
-          <b>Why a room?</b>
-          A room is a small universe with rules.
-          It is a container for randomness.
-          Each object is a different kind of language.
-        </div>
-
-        <div class="howto-p">
-          Interact with at least <b>two objects</b>.
-          Each one changes the pattern and the poem.
-          When you are ready, interact with the door.
-          The door seals your collaboration into a final version.
-        </div>
+        <div class="howto-p">This is a collaboration between you and the computer. You do the noticing and choosing. The computer does the remembering and remixing.</div>
+        <div class="howto-p"><b>Why a room?</b> A room is a small universe with rules. It is a container for randomness. Each object is a different kind of language.</div>
+        <div class="howto-p">Interact with at least <b>two objects</b>. Each one changes the pattern and the poem. When you are ready, interact with the door. The door seals your collaboration into a final version.</div>
       </div>
     </div>
 
-  </header>
+  </div>
 
-  <!-- IMPORTANT: p5.sound must load after p5 -->
+   <!-- Game (left column, row 2) -->
+    <div id="game-frame" class="game-frame"></div>
+
+    <!-- Poem (full width, row 3) -->
+    <pre id="poem" class="poem"></pre>
+
+</header>
+
   <script src="./lib/p5.min.js"></script>
   <script src="./lib/p5.sound.min.js"></script>
   <script src="./sketch.js"></script>

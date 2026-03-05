@@ -7,6 +7,7 @@
   --crt-dim:rgba(51,255,136,.7);
 }
 
+/* Base */
 html, body{
   margin:0;
   padding:0;
@@ -19,256 +20,339 @@ body{
   color:var(--crt-text);
   font-family:'VT323', monospace;
   overflow:hidden; /* desktop: no page scroll */
-  font-size: clamp(16px, 1.4vw, 20px); /* responsive type */
+  font-size: clamp(16px, 1.4vw, 20px);
   line-height:1.35;
 }
 
+/* Titles + labels */
 .panel-title{
-  font-size:30px;
+  font-size:38px;
   color:#ff2a2a;
   font-weight:bold;
-
   letter-spacing:1px;
-  margin-bottom:6px;
-
+  margin:0 0 6px 0;
   text-shadow:0 0 10px rgba(255,42,42,.35);
 }
 
 .control-label{
   color:#ff2a2a;
   letter-spacing:.5px;
-
+  font-weight:bold;
   text-shadow:
     0 0 6px rgba(255,42,42,.6),
     0 0 12px rgba(255,42,42,.35);
 }
+
 /* =========================
-   HUD LAYOUT
+   LAYOUT
+   Row 1: Topbar (ACT left, panels right)
+   Row 2: Game (full width, grows)
+   Row 3: Poem (full width)
 ========================= */
 .hud-top{
   height:100%;
   box-sizing:border-box;
 
   display:grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(260px, 0.6fr);
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.7fr);
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas:
+    "prompt right"
+    "game   right"
+    "poem   poem";
+  .prompt{ grid-area: prompt; }
+  .rightpanels{ grid-area: right; }
+  .game-frame{ grid-area: game; }
+  .poem{ grid-area: poem; }
+  gap:10px;
+
   padding: 8px 10px;
+  min-height:0;
 }
 
-.hud-left{
-  min-height:0;
-  display:flex;
-  flex-direction:column;
-  gap:8px;
-}
-
-.hud-right{
-  min-height:0;
-  min-width:0;
-  display:flex;
-  flex-direction:column;
-  gap:8px;
-
-  /* if the right side gets tall, it scrolls instead of crushing the game */
-  overflow:auto;
-  padding-right:4px;
+/* Topbar: 2 columns */
+.topbar{
+  display:grid;
+  grid-template-columns: 2.5fr 1fr;
+  gap:10px;
+  align-items:start;
 }
 
 /* =========================
-   PROMPT + POEM
+   ACT HEADER (2 columns inside prompt)
 ========================= */
 .prompt{
   border:2px solid var(--crt-border);
   background:var(--crt-panel-strong);
   box-shadow:0 0 8px rgba(0,255,102,.25);
-
-  padding:6px 10px;
+  padding:10px 12px;
   margin:0;
+  box-sizing:border-box;
 
-  font-size:28px;     /* larger title */
-  font-weight:normal;
-  letter-spacing:1px;
-
-  color:#ff2a2a;      /* red title */
-
-  text-shadow:
-    0 0 8px rgba(255,42,42,.55),
-    0 0 16px rgba(255,42,42,.25);
-
-  white-space:pre-wrap;
+  display:grid;
+  grid-template-columns: auto 1fr; /* ACT is tight, right side stretches */
+  gap:12px;
+  align-items:start;
 }
 
-/* Poem log (HUD style, not a scroll box) */
-.poem{
+/* Act header: ACT 1 left, instructions right */
+.prompt .act-row{
+  display:grid;
+  grid-template-columns: auto 1fr;
+  gap: 16px;
+  align-items:start;
+}
+
+.prompt .act-left{
+  display:flex;
+  flex-direction:column;
+}
+
+.prompt .act-right{
+  text-align:right;
+  white-space:normal;         /* allow wrapping */
+  justify-self:stretch;       /* fill the 1fr column */
+  overflow-wrap:anywhere;     /* prevent ugly overflow on long lines */
+}
+
+.prompt .act-title{
+  font-size:38px;
+  color:#ff2a2a;
+  font-weight:bold;
+  letter-spacing:2px;
+  margin:0 0 6px 0;
+  text-shadow:
+    0 0 10px rgba(255,42,42,.65),
+    0 0 22px rgba(255,42,42,.35);
+}
+
+.prompt .act-sub{
+  font-size:20px;
+  color:var(--crt-text);
+  opacity:.95;
+}
+
+.prompt .act-signal{
+  font-size:20px;
+  color:var(--crt-text);
+  opacity:.80;
+  margin: 0 0 2px 0;
+}
+
+/* =========================
+   RIGHT PANELS (no scrolling)
+========================= */
+.rightpanels{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+
+.controls-box,
+.howto-box{
   margin:0;
-  padding:6px 8px 12px 8px;
+  padding:10px 12px;
+  box-sizing:border-box;
 
   background:var(--crt-panel);
   border:2px solid var(--crt-border);
   box-shadow:0 0 8px rgba(0,255,102,.25);
 
-  font-size:20px;
-  line-height:1.35;
   letter-spacing:.6px;
-
-  white-space:pre-wrap;
-  max-height:145px;
-  overflow:hidden;
-}
-
-/* previous lines fade */
-.poem span{
-  opacity:.45;
   color:var(--crt-text);
 }
 
-/* CURRENT typing line */
-.poem span:last-child{
-  opacity:1;
-  color:#66ffd1;
+.controls-box{ line-height:1.25; }
+.howto-box{ line-height:1.35; }
 
-  text-shadow:
-    0 0 4px #00ffc8,
-    0 0 10px #00ffc8,
-    0 0 18px rgba(0,255,200,.8),
-    0 0 32px rgba(0,255,200,.5);
-}
+.howto-p{ margin-top:8px; }
 
 /* =========================
-   GAME VIEW (UNDER POEM)
+   GAME
 ========================= */
-/* game area fills whatever space is left in the left column */
 .game-frame{
-  flex: 1 1 auto;
-  min-height: 0;
-  width: 100%;
+  min-height:0;
+  width:100%;
 
-  display:flex;
-  align-items:stretch;
-  justify-content:stretch;
+  display:block;          /* simpler than flex here */
+  background:transparent;
 
-  background: transparent;
-  border: 1px solid var(--crt-border);
+  border:1px solid var(--crt-border);
   box-shadow: 0 0 6px rgba(0,255,102,.35);
-  border-radius: 4px;
+  border-radius:4px;
 
   overflow:hidden;
   padding:0;
 }
 
+/* Fill the entire game-frame */
 .game-frame canvas{
   display:block;
-  width:100% !important;
-  height:100% !important;
+  width:100%;
+  height:100%;
+
+  /* keep your mobile behavior */
+  touch-action:none;
 }
 
 /* =========================
-   RIGHT COLUMN BOXES
+   POEM (bottom, full width)
 ========================= */
-.controls-box,
-.howto-box{
+.poem{
   margin:0;
-  padding:10px 12px;
+  padding:10px 12px 22px 12px;
+  box-sizing:border-box;
 
   background:var(--crt-panel);
   border:2px solid var(--crt-border);
   box-shadow:0 0 8px rgba(0,255,102,.25);
 
-  letter-spacing:.6px;
+  max-height:240px;
+  overflow:hidden;
+
+  display:flex;
+  flex-direction:column;
+  justify-content:flex-end;
+
+  white-space:pre-wrap;
+}
+
+/* previous lines */
+.poem span{
+  opacity:.55;
   color:var(--crt-text);
+  display:block;
+  margin-bottom:4px;
 }
 
-.controls-box{
-  font-size:inherit;
-  line-height:1.25;
+/* typing line glow + pulse */
+@keyframes typingPulse{
+  0%{
+    filter: brightness(1);
+    text-shadow:
+      0 0 3px #00ffc8,
+      0 0 8px #00ffc8,
+      0 0 14px rgba(0,255,200,.65),
+      0 0 24px rgba(0,255,200,.35);
+  }
+  100%{
+    filter: brightness(1.12);
+    text-shadow:
+      0 0 5px #00ffc8,
+      0 0 12px #00ffc8,
+      0 0 22px rgba(0,255,200,.85),
+      0 0 36px rgba(0,255,200,.55);
+  }
 }
 
-.howto-box{
-  font-size:inherit;
-  line-height:1.35;
-}
-
-.howto-title{
-  color:#ff2a2a;
-  font-weight:bold;
-  margin:0 0 6px 0;
-  text-shadow:0 0 10px rgba(255,42,42,.35);
-}
-
-.howto-p{
-  margin-top:8px;
-}
-
-/* =========================
-   CURSOR EFFECT
-========================= */
-.typing-line{
+.poem .typing-line{
   opacity:1;
   color:#66ffd1;
-  text-shadow:
-    0 0 4px #00ffc8,
-    0 0 10px #00ffc8,
-    0 0 18px rgba(0,255,200,.8),
-    0 0 32px rgba(0,255,200,.5);
+  margin-top:2px;
+  animation: typingPulse 1.6s ease-in-out infinite alternate;
 }
-.cursor{
-  color:#66ffd1;
-  text-shadow:
-    0 0 6px #00ffc8,
-    0 0 12px #00ffc8,
-    0 0 24px rgba(0,255,200,.8);
-  animation: cursorBlink 1s infinite;
-}
+
+/* cursor */
 @keyframes cursorBlink{
   0%,50%,100%{opacity:1;}
   25%,75%{opacity:.2;}
 }
 
-/* =========================
-   RESPONSIVE
-========================= */
-/* Mobile: single column, allow page scroll */
-@media (max-width: 820px){
+.poem .cursor{
+  display:inline;
+  margin-left:2px;
+  opacity:1;
+  color:#66ffd1;
 
-  body{
-    overflow:auto; /* allow scrolling on phones */
-  }
+  text-shadow:
+    0 0 6px #00ffc8,
+    0 0 12px #00ffc8,
+    0 0 24px rgba(0,255,200,.8);
+
+  animation: cursorBlink 1s infinite;
+}
+
+/* =========================
+   CRT OVERLAY
+========================= */
+body::before{
+  content:"";
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  z-index:9999;
+
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      rgba(0,0,0,0.00) 0px,
+      rgba(0,0,0,0.00) 2px,
+      rgba(0,0,0,0.18) 3px
+    );
+
+  mix-blend-mode:multiply;
+  opacity:.55;
+}
+
+body::after{
+  content:"";
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  z-index:10000;
+
+  background: radial-gradient(
+    ellipse at center,
+    rgba(0,0,0,0.00) 0%,
+    rgba(0,0,0,0.15) 60%,
+    rgba(0,0,0,0.35) 100%
+  );
+
+  opacity:.55;
+}
+
+@keyframes crtFlicker{
+  0%{opacity:1;}
+  50%{opacity:.96;}
+  100%{opacity:1;}
+}
+body{
+  animation: crtFlicker 2.6s infinite;
+}
+
+/* =========================
+   MOBILE
+========================= */
+@media (max-width: 820px){
+  body{ overflow:auto; }
 
   .hud-top{
     height:auto;
+    grid-template-rows: auto auto auto;
+  }
+
+  .topbar{
     grid-template-columns: 1fr;
-    gap:10px;
-  }
-
-  .hud-left{
-    order:1;
-  }
-
-  .hud-right{
-    order:2;
-    overflow:visible;
-  }
-
-  .game-frame{
-    flex:0 0 auto;
-
-    /* stable mobile game size */
-    height: min(65vh, 500px);
-    width:100%;
-
-    border-radius:6px;
   }
 
   .prompt{
-    font-size:24px;
+    grid-template-columns: 1fr;
   }
 
-  .panel-title{
-    font-size:24px;
+  .prompt .act-right{
+    text-align:left;
+    white-space:normal;
   }
+
+  .game-frame{
+    height: min(65vh, 520px);
+  }
+
+  .panel-title{ font-size:24px; }
+  .prompt .act-title{ font-size:32px; }
 
   .poem{
-    max-height:120px;
+    max-height:190px;
+    padding-bottom:28px;
   }
-
 }

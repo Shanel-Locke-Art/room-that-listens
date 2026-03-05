@@ -38,7 +38,6 @@ const BASE_W = 960;
 const BASE_H = 540;
 let CW = BASE_W, CH = BASE_H, S = 1;
 let cnv;
-let frameRO = null; // ResizeObserver for #game-frame
 
 /* =========================
    DOM UI
@@ -52,6 +51,20 @@ let poemEl = null;
 let world = { w: 2800, h: 1900, pad: 180 };
 let camera = { x: 0, y: 0 };
 let player = { x: 0, y: 0, r: 10, speed: 2.6, vx: 0, vy: 0, speed01: 0, energy: 0 };
+
+// Touch movement (mobile): a simple virtual joystick bound to the first touch
+let touchMove = {
+  active: false,
+  id: null,
+  startX: 0,
+  startY: 0,
+  x: 0,
+  y: 0
+};
+
+// Canvas-space joystick tuning
+const TOUCH_DEADZONE = 8;   // px
+const TOUCH_MAX_R = 72;     // px
 
 let INTERACT_RADIUS = 86;
 let REVEAL_RADIUS_MULT = 2.8;
@@ -226,6 +239,7 @@ let lastTypeTime = 0;
 ========================= */
 let finalPoemText = "";
 
+let poemLog = [];
 /* =========================
    HIDDEN FOCUS CACHE
 ========================= */
@@ -296,18 +310,6 @@ function setup() {
   const frame = document.getElementById("game-frame");
   if (frame) cnv.parent(frame);
 
-  // Keep p5 canvas sized to the actual #game-frame box (CSS/grid changes do not always trigger windowResized)
-  if (frame && "ResizeObserver" in window) {
-    frameRO = new ResizeObserver(() => {
-      computeCanvasSize();
-      resizeCanvas(CW, CH);
-      createBuffersAndShaders();
-    });
-    frameRO.observe(frame);
-  }
-
-  window.addEventListener("resize", windowResized);
-
   pixelDensity(window.devicePixelRatio || 1);
   noSmooth();
 
@@ -331,12 +333,9 @@ function setup() {
 }
 
 function windowResized() {
-  const frame = document.getElementById("game-frame");
-  const rect = frame.getBoundingClientRect();
-
-  const size = Math.min(rect.width, rect.height);
-
-  resizeCanvas(size, size);
+  computeCanvasSize();
+  resizeCanvas(CW, CH);
+  createBuffersAndShaders();
 }
 
 /* ==========================================================
@@ -344,22 +343,36 @@ function windowResized() {
 ========================================================== */
 function computeCanvasSize() {
   const frame = document.getElementById("game-frame");
+
   let w = Math.max(320, window.innerWidth - 40);
   let h = Math.max(240, window.innerHeight - 220);
 
   if (frame) {
-    const rect = frame.getBoundingClientRect();
     const cs = getComputedStyle(frame);
 
-    const padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
-    const padY = (parseFloat(cs.paddingTop)  || 0) + (parseFloat(cs.paddingBottom) || 0);
+    const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+    const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
 
-    w = Math.max(1, Math.floor(rect.width  - padX));
-    h = Math.max(1, Math.floor(rect.height - padY));
+    const borderX = parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
+    const borderY = parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+
+    // clientWidth/Height are more reliable for “available interior space”
+    w = Math.max(320, Math.floor(frame.clientWidth - padX));
+    h = Math.max(240, Math.floor(frame.clientHeight - padY));
+
+    // If borders are included in clientWidth in some browsers/layouts, this keeps us safe:
+    w = Math.max(320, w - Math.floor(borderX));
+    h = Math.max(240, h - Math.floor(borderY));
   }
 
   CW = w;
   CH = h;
+
+  S = Math.min(CW / BASE_W, CH / BASE_H);
+
+  INTERACT_RADIUS = 92 * S;
+  player.r = 10 * S;
+  player.speed = 2.7 * S;
 }
 
 /* ==========================================================
@@ -606,6 +619,32 @@ function updateMovement() {
     vy = 0;
   }
 
+  // Touch joystick overrides keyboard movement while active.
+  // Drag distance from the touch start controls direction + speed.
+  if (touchMove && touchMove.active) {
+    let dx = touchMove.x - touchMove.startX;
+    let dy = touchMove.y - touchMove.startY;
+
+    const dmag = Math.hypot(dx, dy);
+    if (dmag <= TOUCH_DEADZONE) {
+      vx = 0;
+      vy = 0;
+    } else {
+      const clamped = Math.min(dmag, TOUCH_MAX_R);
+      dx = (dx / dmag) * clamped;
+      dy = (dy / dmag) * clamped;
+
+      const s01 = clamped / TOUCH_MAX_R; // 0..1
+      vx = (dx / TOUCH_MAX_R) * player.speed;
+      vy = (dy / TOUCH_MAX_R) * player.speed;
+
+      // Slight boost near full tilt so it feels responsive on phones
+      const boost = 0.85 + 0.25 * s01;
+      vx *= boost;
+      vy *= boost;
+    }
+  }
+
   // ------------------------------------
   // NEW: store real movement for music
   // ------------------------------------
@@ -694,6 +733,71 @@ function drawWorldMode() {
   drawCompassArrow();
   drawSignalMeter();
   drawActBanner();
+
+  // Mobile helper: show a subtle on-canvas joystick when dragging
+  drawTouchJoystick();
+  drawTouchButtons();
+}
+
+function drawTouchJoystick() {
+  if (!touchMove || !touchMove.active) return;
+
+  push();
+  noFill();
+  stroke(0, 255, 170, 140);
+  strokeWeight(2);
+  circle(touchMove.startX, touchMove.startY, TOUCH_MAX_R * 2);
+
+  stroke(0, 255, 120, 180);
+  line(touchMove.startX, touchMove.startY, touchMove.x, touchMove.y);
+
+  noStroke();
+  fill(0, 255, 170, 190);
+  circle(touchMove.startX, touchMove.startY, 10);
+  fill(180, 255, 220, 220);
+  circle(touchMove.x, touchMove.y, 12);
+  pop();
+}
+
+
+function getInteractButtonRect() {
+  // Screen-space button for mobile (canvas coordinates)
+  const m = 14;                  // margin
+  const h = 44;                  // height
+  const w = 148;                 // width
+  return { x: CW - w - m, y: CH - h - m, w, h };
+}
+
+function _ptInRect(px, py, r) {
+  return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+}
+
+function drawTouchButtons() {
+  // Only show the button when we're in-game (world or focus) and not paused by modal
+  if (showFinalModal) return;
+
+  const r = getInteractButtonRect();
+
+  push();
+  // Backplate
+  noStroke();
+  fill(0, 0, 0, 95);
+  rect(r.x, r.y, r.w, r.h, 6);
+
+  // Outline
+  stroke(0, 255, 170, 170);
+  strokeWeight(2);
+  noFill();
+  rect(r.x, r.y, r.w, r.h, 6);
+
+  // Label
+  noStroke();
+  fill(180, 255, 220, 235);
+  textAlign(CENTER, CENTER);
+  textSize(18);
+  const label = (mode === "focus") ? "CLOSE (E)" : "INTERACT (E)";
+  text(label, r.x + r.w * 0.5, r.y + r.h * 0.52);
+  pop();
 }
 
 function drawCRTBackground() {
@@ -1248,6 +1352,27 @@ function exitFocus() {
 /* ==========================================================
    INPUT
 ========================================================== */
+function tryInteract() {
+  if (paused) return false;
+
+  if (mode === "focus") {
+    if (focusId === "door" && canFinalizePoem()) {
+      finalPoemText = buildFinalPoemText();
+      showFinalModal = true;
+      paused = true;
+      exitFocus();
+      return false;
+    }
+    exitFocus();
+    return false;
+  }
+
+  const near = pickInteractTarget();
+  if (near.s && near.d <= INTERACT_RADIUS) near.s.fn();
+  else sfxTap();
+  return false;
+}
+
 function keyPressed() {
   armAudioIfNeeded();
   if (cnv && cnv.elt) cnv.elt.focus();
@@ -1284,24 +1409,7 @@ function keyPressed() {
   }
 
   if (key === "e" || key === "E") {
-    if (paused) return false;
-
-    if (mode === "focus") {
-      if (focusId === "door" && canFinalizePoem()) {
-        finalPoemText = buildFinalPoemText();
-        showFinalModal = true;
-        paused = true;
-        exitFocus();
-        return false;
-      }
-      exitFocus();
-      return false;
-    }
-
-    const near = pickInteractTarget();
-    if (near.s && near.d <= INTERACT_RADIUS) near.s.fn();
-    else sfxTap();
-    return false;
+    return tryInteract();
   }
 
   return false;
@@ -1324,6 +1432,87 @@ function mouseWheel(event) {
   else focusZoomTarget += step;
 
   sfxZoomTick(delta > 0);
+  return false;
+}
+
+// --------------------------------------------------
+// TOUCH CONTROLS (mobile)
+// - Drag anywhere on the game canvas to move (virtual joystick).
+// - This does not interfere with the right-side HUD because we only
+//   activate movement when the touch begins inside the canvas rect.
+// --------------------------------------------------
+function _touchToCanvasXY(t) {
+  if (!cnv || !cnv.elt) return { x: 0, y: 0, ok: false };
+  const r = cnv.elt.getBoundingClientRect();
+  const cx = (t.clientX - r.left) * (CW / Math.max(1, r.width));
+  const cy = (t.clientY - r.top) * (CH / Math.max(1, r.height));
+  const ok = (t.clientX >= r.left && t.clientX <= r.right && t.clientY >= r.top && t.clientY <= r.bottom);
+  return { x: cx, y: cy, ok };
+}
+
+function touchStarted() {
+  armAudioIfNeeded();
+
+  if (paused || showFinalModal) return false;
+  if (mode !== "world") return false;
+  if (!touches || touches.length === 0) return false;
+
+  // Bind the first touch that starts inside the canvas
+  const t = touches[0];
+  const p = _touchToCanvasXY(t);
+  if (!p.ok) return false;
+
+  // Tap button: Interact / Close
+  const btn = getInteractButtonRect();
+  if (_ptInRect(p.x, p.y, btn)) {
+    tryInteract();
+    return false;
+  }
+
+  touchMove.active = true;
+  touchMove.id = (typeof t.id !== "undefined") ? t.id : (typeof t.identifier !== "undefined" ? t.identifier : 0);
+  touchMove.startX = p.x;
+  touchMove.startY = p.y;
+  touchMove.x = p.x;
+  touchMove.y = p.y;
+  return false; // prevent page scroll
+}
+
+function touchMoved() {
+  if (!touchMove.active || !touches || touches.length === 0) return false;
+
+  // Find the tracked touch (p5 uses .id, DOM Touch uses .identifier)
+  let t = null;
+  for (const tt of touches) {
+    const tid = (typeof tt.id !== "undefined") ? tt.id : (typeof tt.identifier !== "undefined" ? tt.identifier : 0);
+    if (tid === touchMove.id) { t = tt; break; }
+  }
+  if (!t) return false;
+
+  const p = _touchToCanvasXY(t);
+  touchMove.x = p.x;
+  touchMove.y = p.y;
+  return false;
+}
+
+function touchEnded() {
+  // If no touches remain, release joystick
+  if (!touches || touches.length === 0) {
+    touchMove.active = false;
+    touchMove.id = null;
+    return false;
+  }
+
+  // If the tracked touch is gone, also release
+  let stillThere = false;
+  for (const tt of touches) {
+    const tid = (typeof tt.id !== "undefined") ? tt.id : (typeof tt.identifier !== "undefined" ? tt.identifier : 0);
+    if (tid === touchMove.id) { stillThere = true; break; }
+  }
+  if (!stillThere) {
+    touchMove.active = false;
+    touchMove.id = null;
+  }
   return false;
 }
 
@@ -1404,6 +1593,8 @@ function drawFocusMode() {
     fill(0, 255, 170, 230);
     text("Press E to seal the final poem.", 16 * S, 54 * S);
   }
+
+  drawTouchButtons();
 }
 
 /* ==========================================================
@@ -1467,6 +1658,8 @@ function drawFinalModal() {
   textSize(14 * S);
   const bodyY = ty + 54 * S;
   text(finalPoemText, tx, bodyY, panelW - pad * 2, panelH - (bodyY - py) - pad);
+
+  drawTouchButtons();
 }
 
 /* ==========================================================
@@ -1488,6 +1681,8 @@ function gainSignal(reason = "sig") {
   fractal.iters = Math.min(520, fractal.iters + 12);
 
   musicAccent();
+
+  drawTouchButtons();
 }
 
 /* ==========================================================
@@ -1496,20 +1691,68 @@ function gainSignal(reason = "sig") {
 function addInteractionPoetry(id) {
   history.push(id);
 
-  if (history.length >= 2 && random() < 0.45) {
-    queuePoemLine(pickUniqueLine(CONNECTORS, 0xC0FFEE));
-  }
+  const nonDoorCount = history.filter(h => h !== "door").length;
+
+  // The more you interact, the more lines the room writes back.
+  // 1 line early, then gradually ramps up.
+  let linesThisHit = 1 + Math.floor(Math.max(0, nonDoorCount - 1) / 2); // 1,1,2,2,3...
+  if (signal >= 3) linesThisHit += 1;
+  if (signal >= 5) linesThisHit += 1;
+  linesThisHit = Math.min(linesThisHit, 6);
+
+  // Door interactions should not spam the HUD.
+  if (id === "door") linesThisHit = 1;
+
+  const r = mulberry32((runSeed ^ idHash(id) ^ (history.length * 0x9E3779B9)) >>> 0);
 
   const bucket = LINES[id] || ["Something responds, quietly."];
-  queuePoemLine(pickUniqueLine(bucket, idHash(id)));
 
-  if (random() < 0.25) queuePoemLine(pickUniqueLine(GLITCH_LINES, 0xA117C));
+  // A small chance to bridge with a connector when there's context.
+  if (history.length >= 2 && r() < 0.55) {
+    queuePoemLine(pickUniqueLine(CONNECTORS, id + ":connector:" + history.length));
+  }
+
+  // Always include at least one object-specific line.
+  queuePoemLine(pickUniqueLine(bucket, id + ":base:" + history.length));
+
+  // Then add extra lines based on growth.
+  for (let k = 1; k < linesThisHit; k++) {
+    const roll = r();
+
+    // Prefer deeper vocab as SIGNAL grows.
+    if (signal > 0 && roll < 0.26) {
+      queuePoemLine(pickUniqueLine(SIGNAL_LINES, id + ":signal:" + k));
+      continue;
+    }
+    if (signal > 1 && roll < 0.44) {
+      queuePoemLine(pickUniqueLine(MUTATION_LINES, id + ":mut:" + k));
+      continue;
+    }
+
+    // Occasional glitch flavor.
+    if (roll < 0.58) {
+      queuePoemLine(pickUniqueLine(GLITCH_LINES, id + ":glitch:" + k));
+      continue;
+    }
+
+    // Otherwise, echo the object bucket again with a different salt.
+    queuePoemLine(pickUniqueLine(bucket, id + ":echo:" + k));
+  }
+}
+
+function getPoemLinesForFinal() {
+  // Include completed lines, any currently-typing line, and anything queued.
+  const out = [];
+  for (const l of poemLog) out.push(l);
+  if (heldLine && heldLine.trim().length) out.push(heldLine);
+  for (const l of poemQueue) out.push(l);
+  return out;
 }
 
 function buildFinalPoemText() {
   const rand = mulberry32((runSeed ^ 0xABCDEF) >>> 0);
 
-  const stanza = [
+  const ending = [
     pickFrom(ENDING_LINES, rand),
     pickFrom(ENDING_LINES, rand),
     pickFrom(ENDING_LINES, rand)
@@ -1529,9 +1772,20 @@ function buildFinalPoemText() {
   if (signal >= 3) machineBonus.push("The room admits it has been editing you too.");
   if (signal >= 5) machineBonus.push("A private vocabulary opens, and it does not close politely.");
 
+  const bodyLines = getPoemLinesForFinal();
+
+  // Chunk into small stanzas so it reads like a poem, not a log.
+  const stanzas = [];
+  const stanzaSize = 4;
+  for (let i = 0; i < bodyLines.length; i += stanzaSize) {
+    stanzas.push(bodyLines.slice(i, i + stanzaSize).join("\n"));
+  }
+
   return [
     header,
-    stanza.join("\n"),
+    stanzas.join("\n\n"),
+    "",
+    ending.join("\n"),
     "",
     ...(machineBonus.length ? ["SIGNAL:", ...machineBonus, ""] : []),
     "Press ESC to return."
@@ -1559,6 +1813,7 @@ function pickUniqueLine(bucket, salt) {
 ========================================================== */
 function resetTypewriterState() {
   poemQueue = [];
+  poemLog = [];
   typingLine = "";
   typingIndex = 0;
   isTyping = false;
@@ -1605,12 +1860,19 @@ function updateTypewriter() {
       sfxBlip(f, 0.001, 0.02, 0.10);
     }
   } else {
+    // commit completed line to log
+    if (typingLine && typingLine.length) {
+      poemLog.push(typingLine);
+      // keep memory bounded
+      if (poemLog.length > 240) poemLog.shift();
+    }
     isTyping = false;
+    heldLine = "";
   }
 }
 
 function rebuildPoemDisplay() {
-  if (!poemEl) return;
+  if (!poemEl || !promptEl) return;
 
   const rand = mulberry32(runSeed);
   const titleA = pickFrom(["A ROOM", "A PATTERN", "A SMALL LOOP", "A SOFT MACHINE"], rand);
@@ -1629,82 +1891,108 @@ function rebuildPoemDisplay() {
     ? ("SIGNAL " + signal + "/6: withheld words unlocked.")
     : "No SIGNAL yet: SIG nodes are withheld words.";
 
-    const cursor = cursorOn ? '<span class="cursor">█</span>' : " ";
-  const focused = (heldLine || "") + cursor;
+  const keep = 6;
+  const recent = poemLog.slice(Math.max(0, poemLog.length - keep));
 
-  // Render as HTML so cursor span styles work
+  const esc = (s) => String(s)
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;");
+
+  const cursor = '<span class="cursor">█</span>';
+  const focused = esc(heldLine || "") + cursor;
+
+ // Act header (prompt box)
+  promptEl.innerHTML = [
+    `<div class="act-left">`,
+    `  <div class="act-title">ACT 1</div>`,
+    `</div>`,
+    `<div class="act-right">`,
+    `  <div class="act-signal">${esc(signalLine)}</div>`,
+    `  <div class="act-sub">${esc(subtitle)}</div>`,
+    `</div>`
+  ].join("");
+
+  // 2) Poem box is only the poem lines + typing line
   poemEl.innerHTML = [
-    `<span>${titleA} ${titleB}.</span>`,
-    `<span>${subtitle}</span>`,
-    `<span>${signalLine}</span>`,
-    `<span>&nbsp;</span>`,
+    ...recent.map(l => `<span>${esc(l)}</span>`),
     `<span class="typing-line">${focused}</span>`
-  ].join("<br>");
+  ].join("");
 }
-
 /* ==========================================================
    UI PROMPT
 ========================================================== */
 function updateUI() {
   if (!promptEl) return;
 
+  const esc = (s) => String(s)
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;");
+
   promptEl.classList.remove("urgent");
-  const actTag = (act === 2) ? "[ACT 2] " : "[ACT 1] ";
+
+  // ACT title: big red
+  const actTitle = (act === 2) ? "ACT 2" : "ACT 1";
+
+  // Signal line always lives under ACT title now
+  const signalLine = (signal > 0)
+    ? ("SIGNAL " + signal + "/6: withheld words unlocked.")
+    : "No SIGNAL yet: SIG nodes are withheld words.";
+
+  // Build the “objects” instruction line (subtitle) based on state
+  let subtitle = "";
 
   if (showFinalModal) {
-    promptEl.textContent = actTag + "Final poem. ESC closes. R restarts. Space speaks.";
-    return;
-  }
-
-  if (mode === "focus") {
+    subtitle = "Final poem. ESC closes. R restarts. Space speaks.";
+  } else if (mode === "focus") {
     if (focusId === "door" && canFinalizePoem()) {
-      promptEl.textContent = actTag + "Door ready. Press E to seal. Mouse wheel zoom.";
+      subtitle = "Door ready. Press E to seal. Mouse wheel zoom.";
     } else {
-      promptEl.textContent = actTag + "Focus view. Mouse wheel zoom. E or ESC closes. Q pings door.";
+      subtitle = "Focus view. Mouse wheel zoom. E or ESC closes. Q pings door.";
     }
-    return;
-  }
-
-  if (paused) {
-    promptEl.textContent = actTag + "Paused. ESC returns. R restarts.";
-    return;
-  }
-
-  const nonDoorCount = history.filter(h => h !== "door").length;
-  const need = Math.max(0, 2 - nonDoorCount);
-
-  // UI only: determine if something is in range (do NOT call near.s.fn here)
-  const near = pickInteractTarget();
-  const inRange = near.s && near.d <= INTERACT_RADIUS;
-
-  // Act 2 task prompt has priority in world mode
-  if (act === 2 && !history.includes("door")) {
-    const needSig = Math.max(0, 2 - act2SigCollected);
-    const cal = act2Calibrated ? "DONE" : "Lamp, Mirror, Desk";
-    promptEl.textContent = actTag + "ACT 2 TASKS: SIG +" + needSig + " and CALIBRATE: " + cal + ".";
-    if (!act2Calibrated || needSig > 0) promptEl.classList.add("urgent");
-    return;
-  }
-
-  if (inRange) {
-    if (act === 1 && need > 0 && near.s && near.s.id === "door") {
-      promptEl.textContent = actTag + "The door wants more. Find " + need + " more object(s).";
-      promptEl.classList.add("urgent");
-    } else {
-      promptEl.textContent = actTag + "Press E to interact. Q pings the door.";
-    }
-    return;
-  }
-
-  if (act === 1 && need > 0) {
-    promptEl.textContent =
-      actTag + "EXPLORE. FIND " + need + " MORE OBJECT" + (need > 1 ? "S." : ".") + " Hidden SIG nodes deepen SIGNAL.";
-    promptEl.classList.add("urgent");
-  } else if (!history.includes("door")) {
-    promptEl.textContent = actTag + "You have enough lines. Find the door. Press Q to ping it.";
+  } else if (paused) {
+    subtitle = "Paused. ESC returns. R restarts.";
   } else {
-    promptEl.textContent = actTag + "Return to the door. View it and press E to seal.";
+    const nonDoorCount = history.filter(h => h !== "door").length;
+    const need = Math.max(0, 2 - nonDoorCount);
+
+    const near = pickInteractTarget();
+    const inRange = near.s && near.d <= INTERACT_RADIUS;
+
+    // Act 2 task prompt has priority in world mode
+    if (act === 2 && !history.includes("door")) {
+      const needSig = Math.max(0, 2 - act2SigCollected);
+      const cal = act2Calibrated ? "DONE" : "Lamp, Mirror, Desk";
+      subtitle = "Tasks: SIG +" + needSig + " and CALIBRATE: " + cal + ".";
+      if (!act2Calibrated || needSig > 0) promptEl.classList.add("urgent");
+    } else if (inRange) {
+      if (act === 1 && need > 0 && near.s && near.s.id === "door") {
+        subtitle = "The door wants more. Find " + need + " more object(s).";
+        promptEl.classList.add("urgent");
+      } else {
+        subtitle = "Press E to interact. Q pings the door.";
+      }
+    } else {
+      if (act === 1 && need > 0) {
+        subtitle = "Explore. Find " + need + " more object(s). Hidden SIG nodes deepen SIGNAL.";
+        promptEl.classList.add("urgent");
+      } else if (!history.includes("door")) {
+        subtitle = "You have enough lines. Find the door. Press Q to ping it.";
+      } else {
+        subtitle = "Return to the door. View it and press E to seal.";
+      }
+    }
   }
+
+  // Render ACT box as 3 lines
+  promptEl.innerHTML = `
+  <div class="act-left">
+    <div class="act-title">${esc(actTitle)}</div>
+    <div class="act-signal">${esc(signalLine)}</div>
+    <div class="act-sub">${esc(subtitle)}</div>
+  </div>
+`;
 }
 
 /* ==========================================================
