@@ -45,6 +45,12 @@ let cnv;
 let promptEl = null;
 let poemEl = null;
 
+// Final poem modal (HTML overlay)
+let finalModalEl = null;
+let finalTitleEl = null;
+let finalBodyEl = null;
+let finalPoemTitle = "";
+
 /* =========================
    WORLD / CAMERA / PLAYER
 ========================= */
@@ -301,19 +307,21 @@ function preload() {
    SETUP
 ========================================================== */
 function setup() {
-    promptEl = document.getElementById("prompt");
-    poemEl = document.getElementById("poem");
+  promptEl = document.getElementById("prompt");
+  poemEl = document.getElementById("poem");
 
-    computeCanvasSize();
+  finalModalEl = document.getElementById("final-modal");
+  finalTitleEl = document.getElementById("final-title");
+  finalBodyEl  = document.getElementById("final-body");
 
-    cnv = createCanvas(CW, CH);
-    const frame = document.getElementById("game-frame");
-    if (frame) cnv.parent(frame);
+  computeCanvasSize();
 
-    window.addEventListener("resize", computeCanvasSize); // ADD THIS
+  cnv = createCanvas(CW, CH);
+  const frame = document.getElementById("game-frame");
+  if (frame) cnv.parent(frame);
 
-    pixelDensity(window.devicePixelRatio || 1);
-    noSmooth();
+  pixelDensity(window.devicePixelRatio || 1);
+  noSmooth();
 
   // Make canvas focusable
   cnv.elt.setAttribute("tabindex", "0");
@@ -523,7 +531,10 @@ function draw() {
 
   if (mandelShader && fractalLayer) renderFractalLayer();
 
-  if (showFinalModal) drawFinalModal();
+  if (showFinalModal) {
+    const htmlModalOpen = (finalModalEl && finalModalEl.classList && finalModalEl.classList.contains("is-open"));
+    if (!htmlModalOpen) drawFinalModal();
+  }
   else if (mode === "world") drawWorldMode();
   else drawFocusMode();
 
@@ -1359,9 +1370,7 @@ function tryInteract() {
 
   if (mode === "focus") {
     if (focusId === "door" && canFinalizePoem()) {
-      finalPoemText = buildFinalPoemText();
-      showFinalModal = true;
-      paused = true;
+      openFinalModal();
       exitFocus();
       return false;
     }
@@ -1523,10 +1532,32 @@ function restartRun() {
   resetRun();
 }
 
+function openFinalModal() {
+  finalPoemTitle = buildFinalPoemTitle();
+  finalPoemText = buildFinalPoemText();
+  showFinalModal = true;
+  paused = true;
+
+  // Prefer HTML modal overlay when present (scrollable on mobile)
+  if (finalModalEl && finalTitleEl && finalBodyEl) {
+    finalTitleEl.textContent = finalPoemTitle;
+    finalBodyEl.textContent = finalPoemText;
+    finalBodyEl.scrollTop = 0;
+    finalModalEl.classList.add("is-open");
+    finalModalEl.setAttribute("aria-hidden", "false");
+  }
+}
+
 function closeFinalModal() {
   stopTTS();
   showFinalModal = false;
   paused = false;
+
+  if (finalModalEl) {
+    finalModalEl.classList.remove("is-open");
+    finalModalEl.setAttribute("aria-hidden", "true");
+  }
+
   mode = "world";
   focusId = null;
   focusImg = null;
@@ -1647,7 +1678,7 @@ function drawFinalModal() {
   fill(0, 255, 170, 240);
   textAlign(LEFT, TOP);
   textSize(18 * S);
-  text("FINAL POEM", tx, ty);
+  text((finalPoemTitle || "FINAL POEM"), tx, ty);
 
   textSize(12 * S);
   fill(0, 255, 170, 170);
@@ -1751,6 +1782,31 @@ function getPoemLinesForFinal() {
   return out;
 }
 
+function buildFinalPoemTitle() {
+  const rand = mulberry32((runSeed ^ 0xBADC0DE) >>> 0);
+  const A = [
+    "A SMALL LOOP LEAKS",
+    "GREEN PHOSPHOR WEATHER",
+    "THE ROOM REMIXES YOU",
+    "WITHHELD WORDS UNLOCK",
+    "A THRESHOLD LEARNS",
+    "SIGNAL IN THE WALLS",
+    "THE MACHINE LISTENS",
+    "A QUIET GLITCH BLOOMS"
+  ];
+  const B = [
+    "INTO MEANING",
+    "WITHOUT PERMISSION",
+    "AT THE EDGE OF LIGHT",
+    "UNDER SOFT STATIC",
+    "BETWEEN BREATHS",
+    "WITH YOUR FOOTSTEPS",
+    "LIKE A SECRET",
+    "AS IF REMEMBERED"
+  ];
+  return pickFrom(A, rand) + " " + pickFrom(B, rand);
+}
+
 function buildFinalPoemText() {
   const rand = mulberry32((runSeed ^ 0xABCDEF) >>> 0);
 
@@ -1760,21 +1816,23 @@ function buildFinalPoemText() {
     pickFrom(ENDING_LINES, rand)
   ];
 
-  const nonDoorCount = history.filter(h => h !== "door").length;
+  // Pull only the "real" poem lines (not the HUD/tutorial intro).
+  const cutStarts = [
+    "A room shimmers",
+    "You and the machine",
+    "Interact with 2 objects",
+    "Hidden SIG nodes",
+    "Controls:"
+  ];
 
-  const header = [
-    "A SMALL LOOP LEAKS",
-    "Act: " + act + "   Signal: " + signal + "/6",
-    "Objects: " + nonDoorCount + " plus door",
-    ""
-  ].join("\n");
-
-  const machineBonus = [];
-  if (signal >= 1) machineBonus.push("A withheld word clicks into place.");
-  if (signal >= 3) machineBonus.push("The room admits it has been editing you too.");
-  if (signal >= 5) machineBonus.push("A private vocabulary opens, and it does not close politely.");
-
-  const bodyLines = getPoemLinesForFinal();
+  const bodyLines = getPoemLinesForFinal().filter((l) => {
+    const t = String(l || "").trim();
+    if (!t) return false;
+    for (const s of cutStarts) {
+      if (t.startsWith(s)) return false;
+    }
+    return true;
+  });
 
   // Chunk into small stanzas so it reads like a poem, not a log.
   const stanzas = [];
@@ -1784,13 +1842,9 @@ function buildFinalPoemText() {
   }
 
   return [
-    header,
     stanzas.join("\n\n"),
     "",
-    ending.join("\n"),
-    "",
-    ...(machineBonus.length ? ["SIGNAL:", ...machineBonus, ""] : []),
-    "Press ESC to return."
+    ending.join("\n")
   ].join("\n");
 }
 
@@ -1798,16 +1852,32 @@ function pickUniqueLine(bucket, salt) {
   const saltN = (typeof salt === "string") ? idHash(salt) : salt;
   const rand = mulberry32((runSeed ^ (history.length * 1337) ^ saltN) >>> 0);
 
-  for (let k = 0; k < 10; k++) {
+  // 1) Try to find a truly unused line from the bucket
+  for (let k = 0; k < 20; k++) {
     const candidate = pickFrom(bucket, rand);
     if (!usedLines.has(candidate)) {
       usedLines.add(candidate);
       return candidate;
     }
   }
-  const fallback = pickFrom(bucket, rand);
-  usedLines.add(fallback);
-  return fallback;
+
+  // 2) Bucket is exhausted: create a remix so the exact line never repeats
+  const base = pickFrom(bucket, rand);
+  const remixBits = [].concat(CONNECTORS, MUTATION_LINES, GLITCH_LINES, SIGNAL_LINES);
+
+  for (let k = 0; k < 40; k++) {
+    const remix = base + " " + pickFrom(remixBits, rand);
+    if (!usedLines.has(remix)) {
+      usedLines.add(remix);
+      return remix;
+    }
+  }
+
+  // 3) Absolute last resort: add a tiny tag so it is still unique
+  const tag = Math.floor(rand() * 9999).toString().padStart(4, "0");
+  const lastResort = base + " sig-" + tag;
+  usedLines.add(lastResort);
+  return lastResort;
 }
 
 /* ==========================================================
@@ -1906,13 +1976,9 @@ function rebuildPoemDisplay() {
 
  // Act header (prompt box)
   promptEl.innerHTML = [
-    `<div class="act-left">`,
-    `  <div class="act-title">ACT 1</div>`,
-    `</div>`,
-    `<div class="act-right">`,
-    `  <div class="act-signal">${esc(signalLine)}</div>`,
-    `  <div class="act-sub">${esc(subtitle)}</div>`,
-    `</div>`
+    `<div class="act-title">ACT 1</div>`,
+    `<div class="act-sub">${esc(subtitle)}</div>`,
+    `<div class="act-signal">${esc(signalLine)}</div>`
   ].join("");
 
   // 2) Poem box is only the poem lines + typing line
@@ -1989,12 +2055,14 @@ function updateUI() {
 
   // Render ACT box as 3 lines
   promptEl.innerHTML = `
-  <div class="act-left">
-    <div class="act-title">${esc(actTitle)}</div>
-    <div class="act-signal">${esc(signalLine)}</div>
-    <div class="act-sub">${esc(subtitle)}</div>
-  </div>
-`;
+    <div class="act-left">
+      <div class="act-title">${esc(actTitle)}</div>
+      <div class="act-sub">${esc(subtitle)}</div>
+    </div>
+    <div class="act-right">
+      <div class="act-signal">${esc(signalLine)}</div>
+    </div>
+  `;
 }
 
 /* ==========================================================

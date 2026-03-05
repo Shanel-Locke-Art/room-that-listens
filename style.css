@@ -277,6 +277,64 @@ body{
 }
 
 /* =========================
+   FINAL POEM MODAL (HTML overlay)
+========================= */
+.final-modal{
+  position:fixed;
+  inset:0;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  padding:16px;
+  z-index:12000;
+
+  background:rgba(0,0,0,.65);
+}
+
+.final-modal.is-open{ display:flex; }
+
+.final-panel{
+  width:min(940px, 92vw);
+  max-height:86vh;
+  box-sizing:border-box;
+
+  background:rgba(0,18,0,.92);
+  border:2px solid var(--crt-border);
+  box-shadow:0 0 10px rgba(0,255,102,.25);
+  border-radius:10px;
+
+  display:flex;
+  flex-direction:column;
+}
+
+.final-head{
+  padding:14px 16px 10px 16px;
+  border-bottom:1px solid rgba(0,255,102,.35);
+}
+
+.final-title{
+  font-size:28px;
+  color:var(--crt-text);
+  letter-spacing:1px;
+}
+
+.final-hint{
+  margin-top:6px;
+  font-size:16px;
+  color:rgba(51,255,136,.75);
+}
+
+.final-body{
+  margin:0;
+  padding:14px 16px 18px 16px;
+  box-sizing:border-box;
+
+  white-space:pre-wrap;
+  overflow:auto;
+  -webkit-overflow-scrolling:touch;
+}
+
+/* =========================
    CRT OVERLAY
 ========================= */
 body::before{
@@ -363,4 +421,8 @@ body{
     max-height:190px;
     padding-bottom:28px;
   }
+
+  .final-panel{ max-height:90vh; }
+  .final-title{ font-size:24px; }
+  .final-hint{ font-size:14px; }
 }
