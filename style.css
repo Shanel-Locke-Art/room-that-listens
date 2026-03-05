@@ -146,11 +146,14 @@ body{
   display:flex;
   flex-direction:column;
   gap:10px;
-  min-width:0;
+
+  height:100%;
+  min-height:0;
 }
 
 .controls-box,
 .howto-box{
+  margin-top:auto;
   margin:0;
   padding:10px 12px;
   box-sizing:border-box;
@@ -172,7 +175,7 @@ body{
    GAME
 ========================= */
 .game-frame{
-  min-height:0;
+  height:100%;
   width:100%;
 
   display:block;          /* simpler than flex here */
@@ -208,8 +211,8 @@ body{
   border:2px solid var(--crt-border);
   box-shadow:0 0 8px rgba(0,255,102,.25);
 
-  max-height:240px;
-  overflow:hidden;
+  height:180px;           /* fixed height */
+  overflow-y:auto;        /* scroll instead of expand */
 
   display:flex;
   flex-direction:column;
@@ -310,6 +313,10 @@ body::after{
   );
 
   opacity:.55;
+}
+.poem::-webkit-scrollbar{
+  width:0;
+  height:0;
 }
 
 @keyframes crtFlicker{

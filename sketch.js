@@ -301,17 +301,19 @@ function preload() {
    SETUP
 ========================================================== */
 function setup() {
-  promptEl = document.getElementById("prompt");
-  poemEl = document.getElementById("poem");
+    promptEl = document.getElementById("prompt");
+    poemEl = document.getElementById("poem");
 
-  computeCanvasSize();
+    computeCanvasSize();
 
-  cnv = createCanvas(CW, CH);
-  const frame = document.getElementById("game-frame");
-  if (frame) cnv.parent(frame);
+    cnv = createCanvas(CW, CH);
+    const frame = document.getElementById("game-frame");
+    if (frame) cnv.parent(frame);
 
-  pixelDensity(window.devicePixelRatio || 1);
-  noSmooth();
+    window.addEventListener("resize", computeCanvasSize); // ADD THIS
+
+    pixelDensity(window.devicePixelRatio || 1);
+    noSmooth();
 
   // Make canvas focusable
   cnv.elt.setAttribute("tabindex", "0");
