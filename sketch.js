@@ -45,12 +45,6 @@ let cnv;
 let promptEl = null;
 let poemEl = null;
 
-// Final poem modal (HTML overlay)
-let finalModalEl = null;
-let finalTitleEl = null;
-let finalBodyEl = null;
-let finalPoemTitle = "";
-
 /* =========================
    WORLD / CAMERA / PLAYER
 ========================= */
@@ -75,6 +69,33 @@ const TOUCH_MAX_R = 72;     // px
 let INTERACT_RADIUS = 86;
 let REVEAL_RADIUS_MULT = 2.8;
 let EXTRA_HIDDEN = 10;
+
+// Extra non-hidden room items (flavor objects)
+let EXTRA_DECOR = 20;
+
+// Additional room items. Keep ids stable so their sprite + poetry buckets remain consistent.
+const DECOR_IDS = [
+  "mug",
+  "paperclip",
+  "tape",
+  "coin",
+  "feather",
+  "chalk",
+  "glove",
+  "radio",
+  "plant",
+  "candle",
+  "ribbon",
+  "marble",
+  "button",
+  "shell",
+  "clock",
+  "lens",
+  "needle",
+  "map",
+  "stone",
+  "key"
+];
 
 /* =========================
    STATIONS (objects)
@@ -182,7 +203,109 @@ const LINES = {
     "The door waits. It prefers you arrive with a little story first.",
     "A threshold pretends to be a wall.",
     "The hinge holds its breath."
-  ]
+  ],
+
+  mug: [
+    "Warmth lingers where hands once argued with cold.",
+    "Ceramic holds a small weather inside.",
+    "A rim remembers a pause."
+  ],
+  paperclip: [
+    "A tiny loop refusing to let go.",
+    "Metal binds what the mind keeps scattering.",
+    "Order, in miniature."
+  ],
+  tape: [
+    "Adhesive makes a promise it cannot explain.",
+    "Two edges agree to pretend they were one.",
+    "Silence sealed, imperfectly."
+  ],
+  coin: [
+    "Value is a shine the dark agrees on.",
+    "A small moon you can lose in a pocket.",
+    "Luck clicks against your choices."
+  ],
+  feather: [
+    "Air wrote this with a lighter hand.",
+    "A quiet proof that falling can be soft.",
+    "It points to a bird that already left."
+  ],
+  chalk: [
+    "White dust becomes instruction.",
+    "A line appears, and then becomes a smudge.",
+    "Teaching is temporary handwriting."
+  ],
+  glove: [
+    "Fabric for hands that do not want to touch.",
+    "Protection shaped like a second skin.",
+    "Inside, warmth waits."
+  ],
+  radio: [
+    "Static is a crowd you cannot see.",
+    "A voice arrives broken into sparkles.",
+    "The room tunes itself."
+  ],
+  plant: [
+    "Green insists on continuing.",
+    "Leaves practice patience in small rehearsals.",
+    "A stem learns the angle of hope."
+  ],
+  candle: [
+    "Flame is a thought with a body.",
+    "Wax keeps time by surrendering.",
+    "Light makes shadows honest."
+  ],
+  ribbon: [
+    "A soft line tying nothing to nothing.",
+    "It remembers being a gift.",
+    "Color that refuses to be useful."
+  ],
+  marble: [
+    "A planet small enough to misplace.",
+    "Glass holds a trapped storm of color.",
+    "It rolls toward whatever you avoid."
+  ],
+  button: [
+    "A circle that once closed a person.",
+    "Thread made a quiet commitment here.",
+    "Utility pretending to be decoration."
+  ],
+  shell: [
+    "The ocean left a spiral voicemail.",
+    "Hollow rooms can still sing.",
+    "Salt memory, dry and bright."
+  ],
+  clock: [
+    "Time walks in tight circles.",
+    "The second hand pretends urgency.",
+    "The room measures you back."
+  ],
+  lens: [
+    "Focus is a decision you make with your eyes.",
+    "Glass bends the world into confession.",
+    "Closer is not always clearer."
+  ],
+  needle: [
+    "A sharp answer looking for thread.",
+    "Precision is a kind of courage.",
+    "It points at what you tried to ignore."
+  ],
+  map: [
+    "A promise that space can be understood.",
+    "Paper invents a gentler distance.",
+    "You are here, and still not found."
+  ],
+  stone: [
+    "Weight that does not apologize.",
+    "A pocket-sized piece of forever.",
+    "Stillness with edges."
+  ],
+  key: [
+    "Metal learns the shape of permission.",
+    "A lock imagines surrender.",
+    "Teeth remember a door."
+  ],
+
 };
 
 const CONNECTORS = [
@@ -309,10 +432,6 @@ function preload() {
 function setup() {
   promptEl = document.getElementById("prompt");
   poemEl = document.getElementById("poem");
-
-  finalModalEl = document.getElementById("final-modal");
-  finalTitleEl = document.getElementById("final-title");
-  finalBodyEl  = document.getElementById("final-body");
 
   computeCanvasSize();
 
@@ -531,10 +650,7 @@ function draw() {
 
   if (mandelShader && fractalLayer) renderFractalLayer();
 
-  if (showFinalModal) {
-    const htmlModalOpen = (finalModalEl && finalModalEl.classList && finalModalEl.classList.contains("is-open"));
-    if (!htmlModalOpen) drawFinalModal();
-  }
+  if (showFinalModal) drawFinalModal();
   else if (mode === "world") drawWorldMode();
   else drawFocusMode();
 
@@ -565,6 +681,43 @@ function generateStations() {
       glyphSeed: 0,
       spriteId: id,
       fn: () => coreAction(id)
+    });
+  }
+
+
+  // ----------------------------------------------------------
+  // Extra non-hidden room items (DECOR)
+  // ----------------------------------------------------------
+  const decorIds = DECOR_IDS.slice();
+
+  // Deterministic shuffle (stable per run)
+  const drand = mulberry32((runSeed ^ 0xDEC0DE) >>> 0);
+  for (let i = decorIds.length - 1; i > 0; i--) {
+    const j = Math.floor(drand() * (i + 1));
+    const tmp = decorIds[i];
+    decorIds[i] = decorIds[j];
+    decorIds[j] = tmp;
+  }
+
+  const decorCount = Math.min(EXTRA_DECOR, decorIds.length);
+  const decorMinDist = 245 * S;
+  const decorAvoidPlayerDist = 340 * S;
+
+  for (let i = 0; i < decorCount; i++) {
+    const id = decorIds[i];
+    const pos = pickPositionWithSpacing(decorMinDist, decorAvoidPlayerDist, placed);
+    placed.push(pos);
+
+    stations.push({
+      kind: "decor",
+      id,
+      label: id.replace(/_/g, " ").toUpperCase(),
+      x: pos.x, y: pos.y,
+      hidden: false,
+      revealed: true,
+      glyphSeed: 0,
+      spriteId: id,
+      fn: () => decorAction(id)
     });
   }
 
@@ -1315,6 +1468,33 @@ function coreAction(id) {
   enterFocus(id);
 }
 
+// Flavor-only items: small, non-blocking mutations + their own poem buckets.
+function decorAction(id) {
+  addInteractionPoetry(id);
+
+  // Gentle nudge so they "do something" without derailing the core loop.
+  const h = (idHash(id) ^ runSeed) >>> 0;
+  const r = mulberry32(h);
+
+  const dz = 1.0 + (r() - 0.5) * 0.06;
+  const dw = (r() - 0.5) * 0.08;
+  const dc = (r() - 0.5) * 0.06;
+
+  fractal.baseZoom = constrain(fractal.baseZoom * dz, 0.6, 18.0);
+  fractal.baseWarp = clamp01(fractal.baseWarp + dw);
+  fractal.baseCenter.x += dc / Math.max(fractal.baseZoom, 0.001);
+  fractal.baseCenter.y -= dc / Math.max(fractal.baseZoom, 0.001);
+
+  // Tiny sonic signature (varies per item)
+  const pick = (h % 3);
+  if (pick === 0) sfxInteractLow();
+  else if (pick === 1) sfxInteractMid();
+  else sfxInteractHigh();
+
+  enterFocus(id);
+}
+
+
 
 function hiddenAction(glyphSeed, spriteId, sigType) {
   gainSignal("open");
@@ -1370,7 +1550,9 @@ function tryInteract() {
 
   if (mode === "focus") {
     if (focusId === "door" && canFinalizePoem()) {
-      openFinalModal();
+      finalPoemText = buildFinalPoemText();
+      showFinalModal = true;
+      paused = true;
       exitFocus();
       return false;
     }
@@ -1532,32 +1714,10 @@ function restartRun() {
   resetRun();
 }
 
-function openFinalModal() {
-  finalPoemTitle = buildFinalPoemTitle();
-  finalPoemText = buildFinalPoemText();
-  showFinalModal = true;
-  paused = true;
-
-  // Prefer HTML modal overlay when present (scrollable on mobile)
-  if (finalModalEl && finalTitleEl && finalBodyEl) {
-    finalTitleEl.textContent = finalPoemTitle;
-    finalBodyEl.textContent = finalPoemText;
-    finalBodyEl.scrollTop = 0;
-    finalModalEl.classList.add("is-open");
-    finalModalEl.setAttribute("aria-hidden", "false");
-  }
-}
-
 function closeFinalModal() {
   stopTTS();
   showFinalModal = false;
   paused = false;
-
-  if (finalModalEl) {
-    finalModalEl.classList.remove("is-open");
-    finalModalEl.setAttribute("aria-hidden", "true");
-  }
-
   mode = "world";
   focusId = null;
   focusImg = null;
@@ -1678,7 +1838,7 @@ function drawFinalModal() {
   fill(0, 255, 170, 240);
   textAlign(LEFT, TOP);
   textSize(18 * S);
-  text((finalPoemTitle || "FINAL POEM"), tx, ty);
+  text("FINAL POEM", tx, ty);
 
   textSize(12 * S);
   fill(0, 255, 170, 170);
@@ -1782,31 +1942,6 @@ function getPoemLinesForFinal() {
   return out;
 }
 
-function buildFinalPoemTitle() {
-  const rand = mulberry32((runSeed ^ 0xBADC0DE) >>> 0);
-  const A = [
-    "A SMALL LOOP LEAKS",
-    "GREEN PHOSPHOR WEATHER",
-    "THE ROOM REMIXES YOU",
-    "WITHHELD WORDS UNLOCK",
-    "A THRESHOLD LEARNS",
-    "SIGNAL IN THE WALLS",
-    "THE MACHINE LISTENS",
-    "A QUIET GLITCH BLOOMS"
-  ];
-  const B = [
-    "INTO MEANING",
-    "WITHOUT PERMISSION",
-    "AT THE EDGE OF LIGHT",
-    "UNDER SOFT STATIC",
-    "BETWEEN BREATHS",
-    "WITH YOUR FOOTSTEPS",
-    "LIKE A SECRET",
-    "AS IF REMEMBERED"
-  ];
-  return pickFrom(A, rand) + " " + pickFrom(B, rand);
-}
-
 function buildFinalPoemText() {
   const rand = mulberry32((runSeed ^ 0xABCDEF) >>> 0);
 
@@ -1816,23 +1951,21 @@ function buildFinalPoemText() {
     pickFrom(ENDING_LINES, rand)
   ];
 
-  // Pull only the "real" poem lines (not the HUD/tutorial intro).
-  const cutStarts = [
-    "A room shimmers",
-    "You and the machine",
-    "Interact with 2 objects",
-    "Hidden SIG nodes",
-    "Controls:"
-  ];
+  const nonDoorCount = history.filter(h => h !== "door").length;
 
-  const bodyLines = getPoemLinesForFinal().filter((l) => {
-    const t = String(l || "").trim();
-    if (!t) return false;
-    for (const s of cutStarts) {
-      if (t.startsWith(s)) return false;
-    }
-    return true;
-  });
+  const header = [
+    "A SMALL LOOP LEAKS",
+    "Act: " + act + "   Signal: " + signal + "/6",
+    "Objects: " + nonDoorCount + " plus door",
+    ""
+  ].join("\n");
+
+  const machineBonus = [];
+  if (signal >= 1) machineBonus.push("A withheld word clicks into place.");
+  if (signal >= 3) machineBonus.push("The room admits it has been editing you too.");
+  if (signal >= 5) machineBonus.push("A private vocabulary opens, and it does not close politely.");
+
+  const bodyLines = getPoemLinesForFinal();
 
   // Chunk into small stanzas so it reads like a poem, not a log.
   const stanzas = [];
@@ -1842,9 +1975,13 @@ function buildFinalPoemText() {
   }
 
   return [
+    header,
     stanzas.join("\n\n"),
     "",
-    ending.join("\n")
+    ending.join("\n"),
+    "",
+    ...(machineBonus.length ? ["SIGNAL:", ...machineBonus, ""] : []),
+    "Press ESC to return."
   ].join("\n");
 }
 
@@ -1852,32 +1989,16 @@ function pickUniqueLine(bucket, salt) {
   const saltN = (typeof salt === "string") ? idHash(salt) : salt;
   const rand = mulberry32((runSeed ^ (history.length * 1337) ^ saltN) >>> 0);
 
-  // 1) Try to find a truly unused line from the bucket
-  for (let k = 0; k < 20; k++) {
+  for (let k = 0; k < 10; k++) {
     const candidate = pickFrom(bucket, rand);
     if (!usedLines.has(candidate)) {
       usedLines.add(candidate);
       return candidate;
     }
   }
-
-  // 2) Bucket is exhausted: create a remix so the exact line never repeats
-  const base = pickFrom(bucket, rand);
-  const remixBits = [].concat(CONNECTORS, MUTATION_LINES, GLITCH_LINES, SIGNAL_LINES);
-
-  for (let k = 0; k < 40; k++) {
-    const remix = base + " " + pickFrom(remixBits, rand);
-    if (!usedLines.has(remix)) {
-      usedLines.add(remix);
-      return remix;
-    }
-  }
-
-  // 3) Absolute last resort: add a tiny tag so it is still unique
-  const tag = Math.floor(rand() * 9999).toString().padStart(4, "0");
-  const lastResort = base + " sig-" + tag;
-  usedLines.add(lastResort);
-  return lastResort;
+  const fallback = pickFrom(bucket, rand);
+  usedLines.add(fallback);
+  return fallback;
 }
 
 /* ==========================================================
@@ -1897,8 +2018,14 @@ function resetTypewriterState() {
 
 function queuePoemLine(line) {
   if (line == null) return;
-  const s = String(line);
+  const s = String(line).trim();
   if (!s.length) return;
+
+  // Prevent the poem from repeating the exact same line over and over.
+  // (We still allow different lines that happen to be similar.)
+  if (poemLog.includes(s)) return;
+  if (poemQueue.length && poemQueue[poemQueue.length - 1] === s) return;
+
   poemQueue.push(s);
 }
 
@@ -2197,8 +2324,25 @@ function getItemSpriteBase(id) {
     for (let y = 4; y <= 18; y += 2) { px(8, y, DIM); px(16, y, DIM); }
     px(16, 12);
   } else {
-    for (let y = 8; y <= 14; y += 2) for (let x = 8; x <= 14; x += 2) px(x, y);
+    // Deterministic "mystery object" sprite for any decor id we don't have a custom icon for.
+    // This keeps every DECOR item visible without needing a handcrafted sprite per id.
+    const r = mulberry32((runSeed ^ idHash(id) ^ 0x51C0FFEE) >>> 0);
+
+    // base blob
+    for (let y = 8; y <= 14; y += 2) {
+      for (let x = 8; x <= 14; x += 2) {
+        if (r() < 0.68) px(x, y);
+      }
+    }
+
+    // highlight specks
+    for (let i = 0; i < 10; i++) {
+      const x = 6 + Math.floor(r() * 9) * 2;  // 6..22 step 2
+      const y = 6 + Math.floor(r() * 9) * 2;
+      px(x, y, (r() < 0.5) ? DIM : ON);
+    }
   }
+
 
   itemSpriteCache.set(id, g);
   return g;
