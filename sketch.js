@@ -44,6 +44,9 @@ let cnv;
 ========================= */
 let promptEl = null;
 let poemEl = null;
+let finalModalEl = null;
+let finalTitleEl = null;
+let finalBodyEl = null;
 
 /* =========================
    WORLD / CAMERA / PLAYER
@@ -366,8 +369,8 @@ let lastTypeTime = 0;
 /* =========================
    FINAL POEM
 ========================= */
+let finalPoemTitle = "";
 let finalPoemText = "";
-
 let poemLog = [];
 /* =========================
    HIDDEN FOCUS CACHE
@@ -432,6 +435,9 @@ function preload() {
 function setup() {
   promptEl = document.getElementById("prompt");
   poemEl = document.getElementById("poem");
+  finalModalEl = document.getElementById("final-modal");
+  finalTitleEl = document.getElementById("final-title");
+  finalBodyEl = document.getElementById("final-body");
 
   computeCanvasSize();
 
@@ -650,11 +656,32 @@ function draw() {
 
   if (mandelShader && fractalLayer) renderFractalLayer();
 
-  if (showFinalModal) drawFinalModal();
-  else if (mode === "world") drawWorldMode();
+  if (mode === "world") drawWorldMode();
   else drawFocusMode();
 
   updateUI();
+}
+
+function openFinalModal() {
+  finalPoemTitle = buildFinalPoemTitle();
+  finalPoemText = buildFinalPoemText();
+
+  showFinalModal = true;
+  paused = true;
+
+  if (finalTitleEl) {
+    finalTitleEl.textContent = finalPoemTitle;
+  }
+
+  if (finalBodyEl) {
+    finalBodyEl.innerText = finalPoemText;
+    finalBodyEl.scrollTop = 0;
+  }
+
+  if (finalModalEl) {
+    finalModalEl.classList.add("is-open");
+    finalModalEl.setAttribute("aria-hidden", "false");
+  }
 }
 
 /* ==========================================================
@@ -1550,9 +1577,7 @@ function tryInteract() {
 
   if (mode === "focus") {
     if (focusId === "door" && canFinalizePoem()) {
-      finalPoemText = buildFinalPoemText();
-      showFinalModal = true;
-      paused = true;
+      openFinalModal();
       exitFocus();
       return false;
     }
@@ -1723,6 +1748,12 @@ function closeFinalModal() {
   focusImg = null;
   focusZoom = 1.35;
   focusZoomTarget = 1.35;
+
+  if (finalModalEl) {
+    finalModalEl.classList.remove("is-open");
+    finalModalEl.setAttribute("aria-hidden", "true");
+  }
+
   if (cnv && cnv.elt) cnv.elt.focus();
 }
 
@@ -1943,46 +1974,37 @@ function getPoemLinesForFinal() {
 }
 
 function buildFinalPoemText() {
-  const rand = mulberry32((runSeed ^ 0xABCDEF) >>> 0);
 
-  const ending = [
-    pickFrom(ENDING_LINES, rand),
-    pickFrom(ENDING_LINES, rand),
-    pickFrom(ENDING_LINES, rand)
-  ];
+  const rand = mulberry32(runSeed ^ 0xABC123);
 
-  const nonDoorCount = history.filter(h => h !== "door").length;
+  const lines = getPoemLinesForFinal().filter(l => {
+    const t = String(l || "").trim();
+    if (!t) return false;
 
-  const header = [
-    "A SMALL LOOP LEAKS",
-    "Act: " + act + "   Signal: " + signal + "/6",
-    "Objects: " + nonDoorCount + " plus door",
-    ""
-  ].join("\n");
+    // remove UI/tutorial lines
+    if (t.startsWith("ACT")) return false;
+    if (t.startsWith("SIGNAL")) return false;
+    if (t.startsWith("Explore")) return false;
+    if (t.startsWith("Hidden SIG")) return false;
 
-  const machineBonus = [];
-  if (signal >= 1) machineBonus.push("A withheld word clicks into place.");
-  if (signal >= 3) machineBonus.push("The room admits it has been editing you too.");
-  if (signal >= 5) machineBonus.push("A private vocabulary opens, and it does not close politely.");
+    return true;
+  });
 
-  const bodyLines = getPoemLinesForFinal();
+  // remove duplicates
+  const unique = [...new Set(lines)];
 
-  // Chunk into small stanzas so it reads like a poem, not a log.
+  // shuffle poem lines
+  const shuffled = unique.sort(() => rand() - 0.5);
+
+  // build stanzas
+  const stanzaSize = 3;
   const stanzas = [];
-  const stanzaSize = 4;
-  for (let i = 0; i < bodyLines.length; i += stanzaSize) {
-    stanzas.push(bodyLines.slice(i, i + stanzaSize).join("\n"));
+
+  for (let i = 0; i < shuffled.length; i += stanzaSize) {
+    stanzas.push(shuffled.slice(i, i + stanzaSize).join("\n"));
   }
 
-  return [
-    header,
-    stanzas.join("\n\n"),
-    "",
-    ending.join("\n"),
-    "",
-    ...(machineBonus.length ? ["SIGNAL:", ...machineBonus, ""] : []),
-    "Press ESC to return."
-  ].join("\n");
+  return stanzas.join("\n\n");
 }
 
 function pickUniqueLine(bucket, salt) {
@@ -2114,6 +2136,144 @@ function rebuildPoemDisplay() {
     `<span class="typing-line">${focused}</span>`
   ].join("");
 }
+
+/* ==========================================================
+   FINAL POEM TITLE BUILDER
+========================================================== */
+function getPoemLinesForFinal() {
+  const out = [];
+  for (const l of poemLog) out.push(l);
+  if (heldLine && heldLine.trim().length) out.push(heldLine);
+  for (const l of poemQueue) out.push(l);
+  return out;
+}
+
+function buildFinalPoemTitle() {
+  const rand = mulberry32((runSeed ^ 0xDEADBEEF) >>> 0);
+
+  const touched = [];
+  const seen = new Set();
+
+  for (const id of history) {
+    if (!id || id === "door" || id === "hidden") continue;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    touched.push(id);
+  }
+
+  const nounMap = {
+    lamp: ["LIGHT", "LAMP", "GLOW", "FILAMENT"],
+    mirror: ["GLASS", "REFLECTION", "MIRROR", "SURFACE"],
+    desk: ["DESK", "WOOD", "GRAIN", "SURFACE"],
+    radio: ["RADIO", "STATIC", "SIGNAL", "FREQUENCY"],
+    clock: ["CLOCK", "TIME", "HOUR", "TICK"],
+    key: ["KEY", "THRESHOLD", "LOCK", "HINGE"],
+    map: ["MAP", "PAPER", "DIRECTION", "PATH"],
+    candle: ["FLAME", "WAX", "CANDLE", "LIGHT"],
+    plant: ["LEAF", "ROOT", "PLANT", "STEM"],
+    feather: ["FEATHER", "DRIFT", "AIR", "THREAD"],
+    shell: ["SHELL", "ECHO", "CURVE", "TIDE"],
+    coin: ["COIN", "METAL", "LUCK", "CIRCLE"],
+    marble: ["MARBLE", "SPHERE", "GLASS", "SWIRL"],
+    lens: ["LENS", "FOCUS", "GLASS", "EDGE"],
+    needle: ["NEEDLE", "POINT", "THREAD", "PRICK"],
+    ribbon: ["RIBBON", "KNOT", "LOOP", "BOW"],
+    stone: ["STONE", "WEIGHT", "DUST", "PRESSURE"],
+    mug: ["MUG", "CUP", "CERAMIC", "RIM"],
+    paperclip: ["PAPERCLIP", "WIRE", "LOOP", "BEND"],
+    tape: ["TAPE", "SEAM", "EDGE", "STRIP"],
+    chalk: ["CHALK", "DUST", "MARK", "LINE"],
+    glove: ["GLOVE", "PALM", "HAND", "FABRIC"],
+    button: ["BUTTON", "CLICK", "CIRCLE", "FASTENER"]
+  };
+
+  const verbMap = {
+    lamp: ["BREATHES", "GLOWS", "LEARNS", "WAITS"],
+    mirror: ["REMEMBERS", "RETURNS", "DOUBLES", "WATCHES"],
+    desk: ["KEEPS", "HOLDS", "ABSORBS", "LISTENS"],
+    radio: ["WHISPERS", "HUMS", "RETURNS", "CALLS"],
+    clock: ["WAITS", "COUNTS", "TURNS", "LINGERS"],
+    key: ["UNLOCKS", "WAITS", "TURNS", "ADMITS"],
+    map: ["UNFOLDS", "BENDS", "POINTS", "DRIFTS"],
+    candle: ["FLICKERS", "WAITS", "SOFTENS", "BURNS"],
+    plant: ["GROWS", "BENDS", "LEARNS", "DRINKS"],
+    feather: ["DRIFTS", "TREMBLES", "FLOATS", "LISTENS"],
+    shell: ["KEEPS", "ECHOES", "HOLDS", "RETURNS"],
+    coin: ["TURNS", "GLINTS", "WAITS", "SPINS"],
+    marble: ["ROLLS", "SHIFTS", "WAITS", "GLEAMS"],
+    lens: ["FOCUSES", "BENDS", "SHARPENS", "LEARNS"],
+    needle: ["PIERCES", "CATCHES", "TIGHTENS", "POINTS"],
+    ribbon: ["TANGLES", "TIES", "SOFTENS", "LOOPS"],
+    stone: ["SETTLES", "WAITS", "KEEPS", "SINKS"],
+    mug: ["HOLDS", "WAITS", "WARMS", "KEEPS"],
+    paperclip: ["BENDS", "HOLDS", "LOOPS", "CATCHES"],
+    tape: ["SEALS", "HOLDS", "BINDS", "KEEPS"],
+    chalk: ["MARKS", "DUSTS", "FADES", "WRITES"],
+    glove: ["HOLDS", "SOFTENS", "WAITS", "KEEPS"],
+    button: ["CLICKS", "FASTENS", "WAITS", "HOLDS"]
+  };
+
+  const endingMap = {
+    lamp: ["IN GREEN LIGHT", "AFTER YOU", "UNDER STATIC"],
+    mirror: ["UNDER GLASS", "AFTER YOU", "IN A SECOND VOICE"],
+    desk: ["LIKE A MEMORY", "UNDER PRESSURE", "IN WOOD GRAIN"],
+    radio: ["IN STATIC", "BETWEEN SIGNALS", "WITHOUT PERMISSION"],
+    clock: ["AFTER HOURS", "BETWEEN TICKS", "WITHOUT MERCY"],
+    key: ["AT THE THRESHOLD", "WITHOUT A DOOR", "IN THE LOCK"],
+    map: ["WITHOUT A NORTH", "IN PAPER LIGHT", "TOWARD THE EXIT"],
+    candle: ["IN SOFT WAX", "BEFORE THE DARK", "IN SMALL HEAT"]
+  };
+
+  const genericSubjects = [
+    "THE ROOM",
+    "A SMALL LOOP",
+    "THE SIGNAL",
+    "THE PATTERN",
+    "A QUIET MACHINE",
+    "THE OBJECTS"
+  ];
+
+  const genericVerbs = [
+    "REMEMBERS",
+    "WAITS",
+    "LISTENS",
+    "LEARNS",
+    "SHIFTS",
+    "RETURNS"
+  ];
+
+  const genericEndings = [
+    "AFTER YOU",
+    "IN GREEN LIGHT",
+    "UNDER STATIC",
+    "WITHOUT A NAME",
+    "IN THE QUIET ROOM",
+    "BETWEEN WORDS"
+  ];
+
+  const first = touched[0] || null;
+  const second = touched[1] || null;
+  const last = touched.length ? touched[touched.length - 1] : null;
+
+  const firstNouns = first && nounMap[first] ? nounMap[first] : genericSubjects;
+  const secondNouns = second && nounMap[second] ? nounMap[second] : genericSubjects;
+  const lastVerbs = last && verbMap[last] ? verbMap[last] : genericVerbs;
+  const firstEndings = first && endingMap[first] ? endingMap[first] : genericEndings;
+
+  const style = Math.floor(rand() * 4);
+
+  if (style === 0) {
+    return `${pickFrom(firstNouns, rand)} ${pickFrom(lastVerbs, rand)}`;
+  }
+  if (style === 1) {
+    return `${pickFrom(firstNouns, rand)} ${pickFrom(lastVerbs, rand)} ${pickFrom(firstEndings, rand)}`;
+  }
+  if (style === 2) {
+    return `${pickFrom(firstNouns, rand)} AND ${pickFrom(secondNouns, rand)}`;
+  }
+  return `${pickFrom(genericSubjects, rand)} OF ${pickFrom(firstNouns, rand)}`;
+}
+
 /* ==========================================================
    UI PROMPT
 ========================================================== */
@@ -2184,10 +2344,10 @@ function updateUI() {
   promptEl.innerHTML = `
     <div class="act-left">
       <div class="act-title">${esc(actTitle)}</div>
-      <div class="act-sub">${esc(subtitle)}</div>
     </div>
     <div class="act-right">
       <div class="act-signal">${esc(signalLine)}</div>
+      <div class="act-sub">${esc(subtitle)}</div>
     </div>
   `;
 }
@@ -2303,6 +2463,9 @@ function getItemSpriteBase(id) {
   const DIM = [0, 200, 120, 200];
 
   const px = (x, y, c = ON) => { g.noStroke(); g.fill(...c); g.rect(x, y, 2, 2); };
+  const put = (x, y, c = ON) => px(x, y, c);
+  const row = (x0, x1, y, c = ON) => { for (let x = x0; x <= x1; x += 2) put(x, y, c); };
+  const col = (x, y0, y1, c = ON) => { for (let y = y0; y <= y1; y += 2) put(x, y, c); };
 
   if (id === "lamp") {
     px(10, 18); px(12, 18); px(14, 18);
@@ -2311,38 +2474,180 @@ function getItemSpriteBase(id) {
     for (let x = 8; x <= 14; x += 2) px(x, 8, DIM);
     px(10, 6, DIM); px(12, 6, DIM);
     px(12, 12); px(10, 12, DIM); px(14, 12, DIM);
+
   } else if (id === "mirror") {
-    for (let x = 6; x <= 16; x += 2) { px(x, 6); px(x, 16); }
-    for (let y = 8; y <= 14; y += 2) { px(6, y); px(16, y); }
+    row(6, 16, 6);
+    row(6, 16, 16);
+    col(6, 8, 14);
+    col(16, 8, 14);
     for (let y = 8; y <= 14; y += 2) for (let x = 8; x <= 14; x += 2) px(x, y, DIM);
+
   } else if (id === "desk") {
-    for (let x = 4; x <= 18; x += 2) px(x, 10);
-    for (let x = 6; x <= 16; x += 2) px(x, 12);
-    for (let y = 14; y <= 20; y += 2) { px(6, y, DIM); px(16, y, DIM); }
+    row(4, 18, 10);
+    row(6, 16, 12);
+    col(6, 14, 20, DIM);
+    col(16, 14, 20, DIM);
+
   } else if (id === "door") {
-    for (let y = 4; y <= 18; y += 2) { px(10, y); px(12, y); px(14, y); }
-    for (let y = 4; y <= 18; y += 2) { px(8, y, DIM); px(16, y, DIM); }
+    col(10, 4, 18);
+    col(12, 4, 18);
+    col(14, 4, 18);
+    col(8, 4, 18, DIM);
+    col(16, 4, 18, DIM);
     px(16, 12);
+
   } else {
-    // Deterministic "mystery object" sprite for any decor id we don't have a custom icon for.
-    // This keeps every DECOR item visible without needing a handcrafted sprite per id.
-    const r = mulberry32((runSeed ^ idHash(id) ^ 0x51C0FFEE) >>> 0);
+    switch (id) {
+      case "mug":
+        row(8, 14, 10);
+        row(8, 14, 12);
+        row(8, 14, 14);
+        col(8, 10, 14);
+        col(14, 10, 14);
+        put(16, 12, DIM);
+        put(16, 14, DIM);
+        break;
 
-    // base blob
-    for (let y = 8; y <= 14; y += 2) {
-      for (let x = 8; x <= 14; x += 2) {
-        if (r() < 0.68) px(x, y);
-      }
-    }
+      case "paperclip":
+        row(8, 14, 8, DIM);
+        row(8, 12, 16, DIM);
+        col(8, 8, 16, DIM);
+        col(14, 8, 14, DIM);
+        col(12, 10, 16);
+        row(10, 12, 10);
+        break;
 
-    // highlight specks
-    for (let i = 0; i < 10; i++) {
-      const x = 6 + Math.floor(r() * 9) * 2;  // 6..22 step 2
-      const y = 6 + Math.floor(r() * 9) * 2;
-      px(x, y, (r() < 0.5) ? DIM : ON);
+      case "tape":
+        row(8, 16, 10);
+        row(8, 16, 14);
+        col(8, 10, 14);
+        col(16, 10, 14);
+        row(10, 14, 12, DIM);
+        break;
+
+      case "coin":
+      case "button":
+      case "marble":
+        row(10, 14, 8);
+        row(8, 16, 10);
+        row(8, 16, 12);
+        row(8, 16, 14);
+        row(10, 14, 16);
+        if (id === "button") {
+          put(10, 12, DIM); put(14, 12, DIM);
+        }
+        break;
+
+      case "feather":
+        col(12, 6, 16, DIM);
+        put(10, 8); put(14, 10); put(10, 12); put(14, 14); put(10, 16);
+        break;
+
+      case "chalk":
+        row(8, 16, 12, DIM);
+        put(6, 12);
+        put(18, 12);
+        break;
+
+      case "glove":
+        row(8, 14, 14);
+        row(8, 12, 12);
+        col(8, 14, 18);
+        put(14, 10); put(16, 10); put(18, 12);
+        break;
+
+      case "radio":
+        row(6, 16, 10);
+        row(6, 16, 14);
+        col(6, 10, 14);
+        col(16, 10, 14);
+        put(10, 12, DIM); put(12, 12, DIM);
+        put(18, 8, DIM);
+        row(8, 14, 16, DIM);
+        break;
+
+      case "plant":
+        col(12, 12, 18, DIM);
+        put(10, 10); put(14, 10);
+        put(8, 12); put(16, 12);
+        row(10, 14, 18);
+        break;
+
+      case "candle":
+        col(12, 8, 16);
+        row(10, 14, 16, DIM);
+        put(12, 6, DIM);
+        break;
+
+      case "ribbon":
+        put(10, 10); put(14, 10);
+        put(12, 12, DIM);
+        put(10, 14); put(14, 14);
+        put(8, 16, DIM); put(16, 16, DIM);
+        break;
+
+      case "shell":
+        row(8, 16, 14, DIM);
+        row(10, 14, 12);
+        row(12, 12, 10);
+        put(8, 16, DIM); put(16, 16, DIM);
+        break;
+
+      case "clock":
+        row(10, 14, 8);
+        row(8, 16, 10);
+        row(8, 16, 12);
+        row(8, 16, 14);
+        row(10, 14, 16);
+        put(12, 12, DIM);
+        put(12, 10);
+        put(14, 12);
+        break;
+
+      case "lens":
+        row(10, 14, 8);
+        row(8, 16, 10);
+        row(8, 16, 12);
+        row(8, 16, 14);
+        row(10, 14, 16);
+        put(16, 16, DIM); put(18, 18, DIM);
+        break;
+
+      case "needle":
+        row(8, 16, 12);
+        put(18, 12, DIM);
+        put(6, 12, DIM);
+        break;
+
+      case "map":
+        row(8, 16, 8);
+        row(8, 16, 16);
+        col(8, 8, 16);
+        col(16, 8, 16);
+        col(12, 8, 16, DIM);
+        break;
+
+      case "stone":
+        row(10, 14, 10, DIM);
+        row(8, 16, 12, DIM);
+        row(8, 16, 14, DIM);
+        row(10, 14, 16, DIM);
+        break;
+
+      case "key":
+        put(10, 12, DIM); put(12, 10, DIM); put(14, 12, DIM); put(12, 14, DIM);
+        row(14, 18, 12);
+        put(18, 14, DIM);
+        put(16, 16, DIM);
+        break;
+
+      default:
+        row(10, 14, 12);
+        row(10, 14, 14, DIM);
+        row(10, 14, 16);
+        break;
     }
   }
-
 
   itemSpriteCache.set(id, g);
   return g;
@@ -2367,25 +2672,91 @@ function getItemSpriteFrame(id) {
     const t = frameCount % 12;
     if (t < 6) { px(12, 12, HOT); px(10, 12, DIM); }
     else { px(12, 12, ON); px(14, 12, HOT); }
+    return g;
   }
 
   if (id === "mirror") {
-    const step = (frameCount % 16);
+    const step = frameCount % 16;
     const x = 8 + (step % 4) * 2;
     const y = 8 + Math.floor(step / 4) * 2;
     px(x, y, HOT);
     px(x + 2, y + 2, DIM);
+    return g;
   }
 
   if (id === "desk") {
     const y = (frameCount % 10 < 5) ? 10 : 12;
     for (let x = 6; x <= 16; x += 2) px(x, y, DIM);
+    return g;
   }
 
   if (id === "door") {
     const blink = (frameCount % 20 < 3);
     if (blink) px(16, 12, HOT);
     if (frameCount % 18 < 9) { px(8, 8, DIM); px(16, 8, DIM); }
+    return g;
+  }
+
+  // Decor gleam: slower and subtler than mirror/lamp
+  const seed = idHash(id);
+  const phase = (frameCount + (seed % 97)) % 24;
+  const blink = ((frameCount + (seed % 41)) % 42) < 4;
+
+  switch (id) {
+    case "mug":
+      if (blink) { px(12, 10, HOT); px(14, 10, DIM); }
+      break;
+    case "paperclip":
+      px(10 + (phase % 4) * 2, 8 + Math.floor((phase % 8) / 2) * 2, HOT);
+      break;
+    case "tape":
+      if (blink) px(12, 12, HOT);
+      break;
+    case "coin":
+    case "marble":
+    case "button":
+    case "clock":
+    case "lens":
+      px(8 + (phase % 5) * 2, 8 + ((phase + 1) % 5) * 2, HOT);
+      break;
+    case "feather":
+      px(10, 8 + (phase % 5) * 2, HOT);
+      break;
+    case "chalk":
+      if (blink) { px(8, 12, HOT); px(16, 12, HOT); }
+      break;
+    case "glove":
+      if (blink) px(14, 10, HOT);
+      break;
+    case "radio":
+      if (frameCount % 18 < 9) px(10, 12, HOT);
+      else px(12, 12, HOT);
+      break;
+    case "plant":
+      px(8 + (phase % 3) * 4, 10, HOT);
+      break;
+    case "candle":
+      if (frameCount % 10 < 5) px(12, 6, HOT);
+      else px(12, 4, HOT);
+      break;
+    case "ribbon":
+      px((frameCount % 14 < 7) ? 10 : 14, 10, HOT);
+      break;
+    case "shell":
+      if (blink) px(12, 10, HOT);
+      break;
+    case "needle":
+      px(18, 12, HOT);
+      break;
+    case "map":
+      px((frameCount % 12 < 6) ? 8 : 16, 8, HOT);
+      break;
+    case "stone":
+      if (blink) px(12, 12, HOT);
+      break;
+    case "key":
+      if (blink) { px(10, 12, HOT); px(18, 12, HOT); }
+      break;
   }
 
   return g;

@@ -90,53 +90,49 @@ body{
   box-sizing:border-box;
 
   display:grid;
-  grid-template-columns: auto 1fr; /* ACT is tight, right side stretches */
-  gap:12px;
-  align-items:start;
-}
-
-/* Act header: ACT 1 left, instructions right */
-.prompt .act-row{
-  display:grid;
   grid-template-columns: auto 1fr;
-  gap: 16px;
+  gap:18px;
   align-items:start;
 }
 
 .prompt .act-left{
   display:flex;
   flex-direction:column;
+  justify-content:flex-start;
+  min-width:max-content;
 }
 
 .prompt .act-right{
-  text-align:right;
-  white-space:normal;         /* allow wrapping */
-  justify-self:stretch;       /* fill the 1fr column */
-  overflow-wrap:anywhere;     /* prevent ugly overflow on long lines */
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  justify-content:flex-start;
+  min-width:0;
 }
 
 .prompt .act-title{
   font-size:38px;
-  color:#ff2a2a;
   font-weight:bold;
+  color:#ff2a2a;
   letter-spacing:2px;
-  margin:0 0 6px 0;
+  margin:0;
   text-shadow:
     0 0 10px rgba(255,42,42,.65),
     0 0 22px rgba(255,42,42,.35);
+}
+
+.prompt .act-signal{
+  font-size:20px;
+  color:var(--crt-text);
+  opacity:.90;
+  margin:2px 0 4px 0;
 }
 
 .prompt .act-sub{
   font-size:20px;
   color:var(--crt-text);
   opacity:.95;
-}
-
-.prompt .act-signal{
-  font-size:20px;
-  color:var(--crt-text);
-  opacity:.80;
-  margin: 0 0 2px 0;
+  line-height:1.2;
 }
 
 /* =========================
@@ -325,13 +321,11 @@ body{
 }
 
 .final-body{
-  margin:0;
-  padding:14px 16px 18px 16px;
-  box-sizing:border-box;
-
-  white-space:pre-wrap;
-  overflow:auto;
-  -webkit-overflow-scrolling:touch;
+  white-space: pre-wrap;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  font-size: 20px;
+  line-height: 1.35;
 }
 
 /* =========================
