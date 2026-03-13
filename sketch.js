@@ -311,6 +311,14 @@ const LINES = {
 
 };
 
+const ITEM_POEM_LINES = new Set(
+  Object.values(LINES).flat().map(line => String(line).trim())
+);
+
+function isItemPoemLine(line) {
+  return ITEM_POEM_LINES.has(String(line || "").trim());
+}
+
 const CONNECTORS = [
   "Meanwhile, the pattern keeps listening.",
   "Because you touched it, it becomes truer.",
@@ -660,6 +668,23 @@ function draw() {
   else drawFocusMode();
 
   updateUI();
+}
+
+function pickUniqueLine(bucket, salt) {
+  const saltN = (typeof salt === "string") ? idHash(salt) : salt;
+  const rand = mulberry32((runSeed ^ (history.length * 1337) ^ saltN) >>> 0);
+
+  for (let k = 0; k < 10; k++) {
+    const candidate = pickFrom(bucket, rand);
+    if (!usedLines.has(candidate)) {
+      usedLines.add(candidate);
+      return candidate;
+    }
+  }
+
+  const fallback = pickFrom(bucket, rand);
+  usedLines.add(fallback);
+  return fallback;
 }
 
 function openFinalModal() {
@@ -1974,29 +1999,27 @@ function getPoemLinesForFinal() {
 }
 
 function buildFinalPoemText() {
-
   const rand = mulberry32(runSeed ^ 0xABC123);
 
-  const lines = getPoemLinesForFinal().filter(l => {
-    const t = String(l || "").trim();
-    if (!t) return false;
+  // Only keep lines that come from item/object poetry buckets.
+  // This excludes tutorial text, door instructions, glitches, connectors,
+  // mutation/system lines, calibration messages, etc.
+  const allowedBuckets = Object.entries(LINES)
+    .filter(([key]) => key !== "door")
+    .flatMap(([, arr]) => arr);
 
-    // remove UI/tutorial lines
-    if (t.startsWith("ACT")) return false;
-    if (t.startsWith("SIGNAL")) return false;
-    if (t.startsWith("Explore")) return false;
-    if (t.startsWith("Hidden SIG")) return false;
+  const allowedSet = new Set(
+    allowedBuckets.map(line => String(line).trim())
+  );
 
-    return true;
-  });
+  const lines = getPoemLinesForFinal()
+    .map(l => String(l || "").trim())
+    .filter(t => t.length > 0)
+    .filter(t => allowedSet.has(t));
 
-  // remove duplicates
   const unique = [...new Set(lines)];
-
-  // shuffle poem lines
   const shuffled = unique.sort(() => rand() - 0.5);
 
-  // build stanzas
   const stanzaSize = 3;
   const stanzas = [];
 
@@ -2005,22 +2028,6 @@ function buildFinalPoemText() {
   }
 
   return stanzas.join("\n\n");
-}
-
-function pickUniqueLine(bucket, salt) {
-  const saltN = (typeof salt === "string") ? idHash(salt) : salt;
-  const rand = mulberry32((runSeed ^ (history.length * 1337) ^ saltN) >>> 0);
-
-  for (let k = 0; k < 10; k++) {
-    const candidate = pickFrom(bucket, rand);
-    if (!usedLines.has(candidate)) {
-      usedLines.add(candidate);
-      return candidate;
-    }
-  }
-  const fallback = pickFrom(bucket, rand);
-  usedLines.add(fallback);
-  return fallback;
 }
 
 /* ==========================================================
@@ -2260,7 +2267,7 @@ function buildFinalPoemTitle() {
   const lastVerbs = last && verbMap[last] ? verbMap[last] : genericVerbs;
   const firstEndings = first && endingMap[first] ? endingMap[first] : genericEndings;
 
-  const style = Math.floor(rand() * 4);
+  const style = Math.floor(Math.random() * 6);
 
   if (style === 0) {
     return `${pickFrom(firstNouns, rand)} ${pickFrom(lastVerbs, rand)}`;
@@ -2270,6 +2277,15 @@ function buildFinalPoemTitle() {
   }
   if (style === 2) {
     return `${pickFrom(firstNouns, rand)} AND ${pickFrom(secondNouns, rand)}`;
+  }
+  if (style === 3) {
+  return `${pickFrom(firstNouns, rand)} ${pickFrom(genericVerbs, rand)} ${pickFrom(genericEndings, rand)}`;
+  }
+  if (style === 4) {
+  return `${pickFrom(firstNouns, rand)} ${pickFrom(genericVerbs, rand)} ${pickFrom(genericEndings, rand)}`;
+  }
+  if (style === 5) {
+    return `${pickFrom(genericSubjects, rand)} AND ${pickFrom(firstNouns, rand)} ${pickFrom(genericEndings, rand)}`;
   }
   return `${pickFrom(genericSubjects, rand)} OF ${pickFrom(firstNouns, rand)}`;
 }
