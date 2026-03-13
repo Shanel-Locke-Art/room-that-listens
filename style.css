@@ -316,19 +316,17 @@ body{
 }
 
 .final-hint{
-  font-size:20px;
-  color:rgba(51,255,136,.75);
   margin-top:6px;
+  font-size:16px;
+  color:rgba(51,255,136,.75);
 }
 
 .final-body{
   white-space: pre-wrap;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-
   font-size:20px;
   line-height:1.5;
-
   padding:20px 26px 24px 26px;
 }
 

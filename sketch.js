@@ -391,6 +391,11 @@ let finalPoemText = "";
 let poemLog = [];
 let actPoems = { 1: [], 2: [], 3: [] };
 
+// NEW: between-act poem popup
+let showActPoemModal = false;
+let actPoemTitle = "";
+let actPoemText = "";
+
 function resetActPoems() {
   actPoems = { 1: [], 2: [], 3: [] };
 }
@@ -400,6 +405,42 @@ function pushActPoemLine(line, actNumber = act) {
   if (!s.length) return;
   if (!actPoems[actNumber]) actPoems[actNumber] = [];
   if (!actPoems[actNumber].includes(s)) actPoems[actNumber].push(s);
+}
+
+function cleanActLines(lines) {
+  return [...new Set((lines || [])
+    .map(l => String(l || "").trim())
+    .filter(t => t.length > 0)
+    .filter(isItemPoemLine))];
+}
+
+function buildActPoemSnapshot() {
+  const stanza1 = cleanActLines(actPoems[1]).join("\n");
+  const stanza2 = cleanActLines(actPoems[2]).join("\n");
+  const stanza3 = cleanActLines(actPoems[3]).join("\n");
+
+  if (act === 2) {
+    return stanza1;
+  }
+
+  if (act === 3) {
+    return [stanza1, stanza2].filter(Boolean).join("\n\n");
+  }
+
+  return [stanza1, stanza2, stanza3].filter(Boolean).join("\n\n");
+}
+
+function openActPoemModal(title, text) {
+  actPoemTitle = title;
+  actPoemText = text;
+  showActPoemModal = true;
+  paused = true;
+}
+
+function closeActPoemModal() {
+  showActPoemModal = false;
+  paused = false;
+  if (cnv && cnv.elt) cnv.elt.focus();
 }
 
 /* =========================
@@ -710,6 +751,8 @@ function startAct2() {
   queuePoemLine("The room shifts. It was listening.");
   queuePoemLine("Set the sequence: " + formatSequence(act2TargetSeq) + ".");
   sfxDoorRumble();
+
+  openActPoemModal("Stanza I", buildActPoemSnapshot());
 }
 
 function startAct3() {
@@ -722,6 +765,8 @@ function startAct3() {
     queuePoemLine("Revisit: " + formatSequence(act3TargetIds) + ". Then return to the door.");
   }
   sfxDoorRumble();
+
+  openActPoemModal("Stanza II", buildActPoemSnapshot());
 }
 
 /* ==========================================================
@@ -733,6 +778,10 @@ function resetRun() {
   paused = false;
   showFinalModal = false;
   finalPoemText = "";
+
+  showActPoemModal = false;
+  actPoemTitle = "";
+  actPoemText = "";
 
   mode = "world";
   focusId = null;
@@ -763,6 +812,8 @@ function resetRun() {
   pulse.r = 0;
   pulse.hit = false;
   pulse.speed = 18;
+
+  
 
   // Randomize world dimensions
   world.w = Math.floor(2400 + random(0, 1400));
@@ -825,6 +876,10 @@ function draw() {
 
   if (mode === "world") drawWorldMode();
   else drawFocusMode();
+
+  if (showActPoemModal) {
+    drawActPoemModal();
+  }
 
   updateUI();
 }
@@ -1653,6 +1708,11 @@ function handleAct2CalibrationTouch(id) {
       act2Calibrated = true;
       queuePoemLine("Calibration complete. The room stops resisting your order.");
       sfxBlip(980, 0.001, 0.06, 0.22);
+
+      pulse.active = true;
+      pulse.r = 0;
+      pulse.hit = false;
+      sfxBlip(420, 0.001, 0.06, 0.30);
     }
   } else {
     act2Progress = (id === act2TargetSeq[0]) ? 1 : 0;
@@ -1817,7 +1877,7 @@ function exitFocus() {
    INPUT
 ========================================================== */
 function tryInteract() {
-  if (paused) return false;
+  if (paused || showActPoemModal) return false;
 
   if (mode === "focus") {
     if (focusId === "door" && canFinalizePoem()) {
@@ -1836,40 +1896,46 @@ function tryInteract() {
 }
 
 function keyPressed() {
-  armAudioIfNeeded();
-  if (cnv && cnv.elt) cnv.elt.focus();
 
+  // Final poem modal
   if (showFinalModal) {
-    if (keyCode === 32) {
-      if (ttsEnabled) {
-        if (speaking) stopTTS();
-        else speakText(finalPoemText);
-      }
+    if (keyCode === ESCAPE || keyCode === 32 || key === "e" || key === "E") {
+      closeFinalModal();
       return false;
     }
-    if (keyCode === ESCAPE) { closeFinalModal(); return false; }
-    if (key === "r" || key === "R") { restartRun(); return false; }
     return false;
   }
 
-  if (keyCode === ESCAPE) {
-    if (mode === "focus") exitFocus();
-    else paused = !paused;
-    return false;
-  }
-
-  if (key === "r" || key === "R") { restartRun(); return false; }
-
-  if (key === "q" || key === "Q") {
-    if (mode === "world" && !paused) {
-      pulse.active = true;
-      pulse.r = 0;
-      pulse.hit = false;
-      sfxBlip(420, 0.001, 0.06, 0.30);
+  // Between-act poem popup
+  if (showActPoemModal) {
+    if (keyCode === ESCAPE || keyCode === 32 || key === "e" || key === "E") {
+      closeActPoemModal();
+      return false;
     }
     return false;
   }
 
+  // Pause toggle
+  if (keyCode === ESCAPE) {
+    paused = !paused;
+    return false;
+  }
+
+  // Restart
+  if (key === "r" || key === "R") {
+    resetRun();
+    return false;
+  }
+
+  // Quit focus mode
+  if (key === "q" || key === "Q") {
+    if (mode === "focus") {
+      exitFocus();
+      return false;
+    }
+  }
+
+  // Interact
   if (key === "e" || key === "E") {
     return tryInteract();
   }
@@ -2063,6 +2129,40 @@ function drawFocusMode() {
   }
 
   drawTouchButtons();
+}
+
+function drawActPoemModal() {
+  noStroke();
+  fill(0, 0, 0, 170);
+  rect(0, 0, CW, CH);
+
+  const panelW = Math.min(CW * 0.78, 760 * S);
+  const panelH = Math.min(CH * 0.72, 560 * S);
+  const px = (CW - panelW) * 0.5;
+  const py = (CH - panelH) * 0.5;
+
+  fill(0, 28, 0, 240);
+  stroke(0, 255, 170, 150);
+  strokeWeight(Math.max(2.0 * S, 2));
+  rect(px, py, panelW, panelH, 10 * S);
+
+  const pad = 18 * S;
+  const tx = px + pad;
+  const ty = py + pad;
+
+  noStroke();
+  fill(0, 255, 170, 240);
+  textAlign(LEFT, TOP);
+  textSize(20 * S);
+  text(actPoemTitle, tx, ty);
+
+  fill(0, 255, 170, 170);
+  textSize(12 * S);
+  text("E / SPACE / ESC to continue", tx, ty + 28 * S);
+
+  fill(0, 255, 170, 235);
+  textSize(15 * S);
+  text(actPoemText, tx, ty + 58 * S, panelW - pad * 2, panelH - 84 * S);
 }
 
 /* ==========================================================
