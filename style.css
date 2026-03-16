@@ -330,6 +330,15 @@ body{
   padding:20px 26px 24px 26px;
 }
 
+.panel-sub{
+  margin-top:10px;
+  margin-bottom:6px;
+  font-size:20px;
+  letter-spacing:1px;
+  color:#ff2a2a;
+  font-weight:bold;
+}
+
 /* =========================
    CRT OVERLAY
 ========================= */

@@ -1929,11 +1929,19 @@ function keyPressed() {
 
   // Quit focus mode
   if (key === "q" || key === "Q") {
+  if (!paused && !showActPoemModal && !showFinalModal) {
+    pulse.active = true;
+    pulse.r = 0;
+    pulse.hit = false;
+    sfxBlip(420, 0.001, 0.06, 0.30);
+
+    // If you're in focus mode, also give immediate door trail feedback
     if (mode === "focus") {
-      exitFocus();
-      return false;
+      doorTrail.t = doorTrail.maxT;
     }
   }
+  return false;
+}
 
   // Interact
   if (key === "e" || key === "E") {
