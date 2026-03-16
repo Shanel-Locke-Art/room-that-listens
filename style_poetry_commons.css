@@ -274,7 +274,7 @@ body{
 }
 
 .final-panel{
-  width:min(1180px, 96vw);
+  width:min(1500px, 96vw);   /* was 1180px */
   max-height:90vh;
   display:flex;
   flex-direction:column;
@@ -297,12 +297,12 @@ body{
 
 .final-content{
   display:grid;
-  grid-template-columns:minmax(0, 1fr) minmax(0, 1fr);
-  gap:16px;
+  grid-template-columns:1.3fr 0.7fr;
+  gap:18px;
   min-height:0;
   flex:1 1 auto;
   overflow:hidden;
-  padding:16px;
+  padding:18px;
 }
 
 .final-poem-wrap{
@@ -331,7 +331,7 @@ body{
   overflow:auto;
   white-space:pre-wrap;
   -webkit-overflow-scrolling:touch;
-  font-size:24px;
+  font-size:26px;
   line-height:1.65;
   padding:18px 22px 22px 22px;
   color:var(--crt-text-soft);
