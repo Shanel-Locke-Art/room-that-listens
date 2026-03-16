@@ -409,6 +409,8 @@ const LEADERBOARD_CONFIG = {
 
 let leaderboardEntries = [];
 let leaderboardBusy = false;
+let finalSpeechAutoplay = true;
+let finalSpeechFinished = false;
 
 function resetActPoems() {
   actPoems = { 1: [], 2: [], 3: [] };
@@ -463,12 +465,6 @@ function closeActPoemModal() {
 let hiddenFocusCache = new Map();
 
 /* =========================
-   TTS
-========================= */
-const ttsEnabled = ("speechSynthesis" in window);
-let speaking = false;
-
-/* =========================
    AUDIO (p5.sound)
 ========================= */
 let audioArmed = false;
@@ -499,6 +495,91 @@ let music = {
 };
 
 let lastNearId = null;
+
+/* =========================
+   TEXT TO SPEECH
+========================= */
+
+let ttsEnabled = true;
+let speaking = false;
+let currentUtterance = null;
+
+function speakText(text) {
+  if (!ttsEnabled || !window.speechSynthesis) return;
+
+  stopTTS();
+
+  currentUtterance = new SpeechSynthesisUtterance(text);
+  currentUtterance.rate = 0.95;
+  currentUtterance.pitch = 1;
+  currentUtterance.volume = 1;
+
+  currentUtterance.onend = () => {
+    speaking = false;
+    currentUtterance = null;
+
+    if (showFinalModal) {
+      finalSpeechFinished = true;
+      setPoetryCommonsEnabled(true);
+
+      if (leaderboardStatusEl) {
+        leaderboardStatusEl.textContent = "Poetry Commons is live.";
+      }
+
+      if (poetNameInputEl) {
+        setTimeout(() => poetNameInputEl.focus(), 0);
+      }
+    }
+  };
+
+  speaking = true;
+  speechSynthesis.speak(currentUtterance);
+}
+
+function stopTTS() {
+  if (!window.speechSynthesis) return;
+
+  speechSynthesis.cancel();
+  speaking = false;
+  currentUtterance = null;
+
+  if (showFinalModal) {
+    finalSpeechFinished = true;
+    setPoetryCommonsEnabled(true);
+
+    if (leaderboardStatusEl) {
+      leaderboardStatusEl.textContent = "Poetry Commons is live.";
+    }
+  }
+}
+
+function toggleFinalSpeech() {
+  if (speaking) {
+    stopTTS();
+    return;
+  }
+
+  const titleEl = document.getElementById("final-title");
+  const bodyEl = document.getElementById("final-body");
+
+  if (!bodyEl) return;
+
+  let title = titleEl ? titleEl.textContent : "";
+  let body = bodyEl.textContent;
+
+  body = body.replace(/\s+\./g, ".");
+  body = body.replace(/\s+,/g, ",");
+  body = body.replace(/\n+/g, "... ");
+  body = body.replace(/\.{4,}/g, "...");
+
+  const text = (title + ". " + body).trim();
+
+  if (text.length > 0) {
+    finalSpeechFinished = false;
+    setPoetryCommonsEnabled(false);
+    speakText(text);
+  }
+}
 
 /* =========================
    SPRITES (procedural)
@@ -913,6 +994,7 @@ function openFinalModal() {
 
   showFinalModal = true;
   paused = true;
+  finalSpeechFinished = false;
 
   if (finalTitleEl) {
     finalTitleEl.textContent = finalPoemTitle;
@@ -928,11 +1010,51 @@ function openFinalModal() {
     finalModalEl.setAttribute("aria-hidden", "false");
   }
 
+  setPoetryCommonsEnabled(false);
   renderLeaderboard();
   refreshLeaderboard();
-  if (poetNameInputEl) {
-    setTimeout(() => poetNameInputEl.focus(), 0);
+
+  if (finalSpeechAutoplay) {
+    setTimeout(() => {
+      if (showFinalModal && !speaking) {
+        toggleFinalSpeech();
+      }
+    }, 250);
   }
+}
+
+function closeFinalModal() {
+  stopTTS();
+  showFinalModal = false;
+  paused = false;
+  mode = "world";
+  focusId = null;
+  focusImg = null;
+  focusZoom = 1.35;
+  focusZoomTarget = 1.35;
+
+  if (finalModalEl) {
+    finalModalEl.classList.remove("is-open");
+    finalModalEl.setAttribute("aria-hidden", "true");
+  }
+
+  if (cnv && cnv.elt) cnv.elt.focus();
+}
+
+function debugOpenFinalPoem() {
+  stopTTS();
+  act = 3;
+  act3TargetIds = [];
+  act3Touched = new Set();
+  history = history.filter(Boolean);
+
+  if (!history.includes("door")) history.push("door");
+  if (history.filter(id => id !== "door").length < 2) {
+    history.push("lamp");
+    history.push("mirror");
+  }
+
+  openFinalModal();
 }
 
 /* ==========================================================
@@ -1599,10 +1721,7 @@ function canEnterDoorState() {
 }
 
 function canFinalizePoem() {
-  if (act === 3) return canEnterAct3Door();
-  const hasDoor = history.includes("door");
-  const nonDoorCount = history.filter(h => h !== "door").length;
-  return hasDoor && nonDoorCount >= 2;
+  return act === 3 && canEnterAct3Door();
 }
 
 function drawCompassArrow() {
@@ -1909,7 +2028,7 @@ function tryInteract() {
   if (paused || showActPoemModal) return false;
 
   if (mode === "focus") {
-    if (focusId === "door" && canFinalizePoem()) {
+    if (focusId === "door" && act === 3 && canEnterAct3Door()) {
       openFinalModal();
       exitFocus();
       return false;
@@ -1932,16 +2051,7 @@ function keyPressed() {
      ae.tagName === "TEXTAREA" ||
      ae.isContentEditable);
 
-  // Final poem modal
   if (showFinalModal) {
-    if (isTypingField) {
-      if (keyCode === ESCAPE) {
-        closeFinalModal();
-        return false;
-      }
-      return true;
-    }
-
     if (keyCode === ESCAPE) {
       closeFinalModal();
       return false;
@@ -1950,6 +2060,10 @@ function keyPressed() {
     if (keyCode === 32) {
       toggleFinalSpeech();
       return false;
+    }
+
+    if (isTypingField) {
+      return true;
     }
 
     return false;
@@ -1970,6 +2084,11 @@ function keyPressed() {
 
   if (key === "r" || key === "R") {
     resetRun();
+    return false;
+  }
+
+  if (key === "t" || key === "T") {
+    debugOpenFinalPoem();
     return false;
   }
 
@@ -2142,6 +2261,16 @@ function persistPoetName() {
     localStorage.setItem("poemRoom.poetName", String(poetNameInputEl.value || "").trim().slice(0, 24));
   } catch (err) {
     // ignore localStorage failures
+  }
+}
+
+function setPoetryCommonsEnabled(enabled) {
+  if (poetNameInputEl) poetNameInputEl.disabled = !enabled;
+  if (sharePoemBtnEl) sharePoemBtnEl.disabled = !enabled;
+  if (refreshBoardBtnEl) refreshBoardBtnEl.disabled = !enabled;
+
+  if (leaderboardStatusEl && !enabled) {
+    leaderboardStatusEl.textContent = "Listen to the poem first. Poetry Commons will open when the reading ends.";
   }
 }
 
@@ -3641,19 +3770,67 @@ function updateFootsteps() { /* optional placeholder */ }
 /* ==========================================================
    TTS
 ========================================================== */
-function speakText(txt) {
-  if (!ttsEnabled) return;
-  stopTTS();
-  const u = new SpeechSynthesisUtterance(txt);
-  u.rate = 0.92;
-  u.pitch = 0.96;
-  speaking = true;
-  u.onend = () => { speaking = false; };
-  speechSynthesis.speak(u);
+function pickBestVoice() {
+  if (!window.speechSynthesis) return null;
+  const voices = speechSynthesis.getVoices ? speechSynthesis.getVoices() : [];
+  if (!voices || !voices.length) return null;
+
+  const preferred = voices.find(v => /en/i.test(v.lang || "") && /female|zira|samantha|victoria|karen|moira/i.test(v.name || ""));
+  if (preferred) return preferred;
+
+  const english = voices.find(v => /en/i.test(v.lang || ""));
+  return english || voices[0] || null;
 }
 
-function stopTTS() {
-  if (!ttsEnabled) return;
-  if (speechSynthesis.speaking) speechSynthesis.cancel();
-  speaking = false;
+function speakText(txt) {
+  if (!ttsEnabled || !window.speechSynthesis) return;
+  stopTTS();
+
+  const cleanText = String(txt || "")
+    .replace(/\s+([,.;:!?])/g, "$1")
+    .replace(/\n+/g, " ... ")
+    .replace(/\.{4,}/g, "...")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  if (!cleanText) return;
+
+  const utterance = new SpeechSynthesisUtterance(cleanText);
+  const voice = pickBestVoice();
+  if (voice) utterance.voice = voice;
+  utterance.rate = 0.9;
+  utterance.pitch = 0.96;
+  utterance.volume = 1;
+  utterance.onend = () => {
+    speaking = false;
+    currentUtterance = null;
+  };
+  utterance.onerror = () => {
+    speaking = false;
+    currentUtterance = null;
+  };
+
+  currentUtterance = utterance;
+  speaking = true;
+  speechSynthesis.speak(utterance);
+}
+
+function toggleFinalSpeech() {
+  if (speaking || (window.speechSynthesis && (speechSynthesis.speaking || speechSynthesis.pending))) {
+    stopTTS();
+    return;
+  }
+
+  const title = String(finalPoemTitle || (finalTitleEl ? finalTitleEl.textContent : "") || "").trim();
+  let body = String(finalPoemText || (finalBodyEl ? finalBodyEl.textContent : "") || "");
+
+  body = body
+    .replace(/\s+\./g, ".")
+    .replace(/\s+,/g, ",")
+    .replace(/\n+/g, " ... ")
+    .replace(/\.{4,}/g, "...")
+    .trim();
+
+  const fullText = [title, body].filter(Boolean).join(". ");
+  if (fullText) speakText(fullText);
 }
