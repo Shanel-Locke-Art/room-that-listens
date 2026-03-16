@@ -47,6 +47,11 @@ let poemEl = null;
 let finalModalEl = null;
 let finalTitleEl = null;
 let finalBodyEl = null;
+let leaderboardStatusEl = null;
+let leaderboardListEl = null;
+let poetNameInputEl = null;
+let sharePoemBtnEl = null;
+let refreshBoardBtnEl = null;
 
 /* =========================
    WORLD / CAMERA / PLAYER
@@ -122,100 +127,19 @@ let focusZoomTarget = 1.35;
 /* =========================
    ACTS
 ========================= */
-let act = 1;
-let actBannerFrames = 0;
-
-let actPoems = {
-  1: [],
-  2: [],
-  3: []
-};
-
-function resetActPoems() {
-  actPoems[1] = [];
-  actPoems[2] = [];
-  actPoems[3] = [];
-}
-
-function pushActPoemLine(line, actNumber = act) {
-  const s = String(line || "").trim();
-  if (!s.length) return;
-
-  if (!actPoems[actNumber]) {
-    actPoems[actNumber] = [];
-  }
-
-  if (!actPoems[actNumber].includes(s)) {
-    actPoems[actNumber].push(s);
-  }
-}
+let act = 1;                // 1 = The Room, 2 = The Machine Notices You
+let actBannerFrames = 0;    // overlay countdown frames
 
 // Act 2 objective tracking
 let act2SigCollected = 0;
 let act2Calibrated = false;
 let act2Seq = []; // last few calibration interactions
 let act2TargetSeq = [];
+let act2Progress = 0;
 
-function formatItemName(id) {
-  return String(id)
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, c => c.toUpperCase());
-}
-
-function formatSequence(seq) {
-  return seq.map(formatItemName).join(" → ");
-}
-
-function getCalibrationCandidates() {
-  // Use all visible non-door interactables so the sequence can vary.
-  return stations
-    .filter(s => s.id !== "door" && (s.kind === "core" || s.kind === "decor"))
-    .map(s => s.id);
-}
-
-function pickAct2TargetSeq() {
-  const pool = [...new Set(getCalibrationCandidates())];
-  const rand = mulberry32((runSeed ^ 0xA2C711) >>> 0);
-
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(rand() * (i + 1));
-    const tmp = pool[i];
-    pool[i] = pool[j];
-    pool[j] = tmp;
-  }
-
-  // Pick 3 different objects for calibration.
-  act2TargetSeq = pool.slice(0, Math.min(3, pool.length));
-}
-
-function getNextCalibrationId() {
-  if (act2Calibrated) return null;
-
-  for (let i = 0; i < act2Seq.length; i++) {
-    if (act2Seq[i] !== act2TargetSeq[i]) {
-      return act2TargetSeq[0] || null;
-    }
-  }
-
-  return act2TargetSeq[act2Seq.length] || null;
-}
-
-function getStationById(id) {
-  return stations.find(s => s.id === id) || null;
-}
-
-// Act 3 objective tracking
-let act3Touched = [];
-const ACT3_GOAL = 3;
-
-function markAct3Touch(id) {
-  if (!id || id === "door" || id === "hidden") return;
-  if (!act3Touched.includes(id)) act3Touched.push(id);
-}
-
-function canEnterAct3Door() {
-  return act3Touched.length >= ACT3_GOAL;
-}
+// Act 3 revision tracking
+let act3TargetIds = [];
+let act3Touched = new Set();
 
 /* =========================
    SIGNAL + DOOR GUIDANCE
@@ -399,7 +323,10 @@ const LINES = {
 };
 
 const ITEM_POEM_LINES = new Set(
-  Object.values(LINES).flat().map(line => String(line).trim())
+  Object.entries(LINES)
+    .filter(([key]) => key !== "door" && key !== "hidden")
+    .flatMap(([, arr]) => arr)
+    .map(line => String(line).trim())
 );
 
 function isItemPoemLine(line) {
@@ -467,6 +394,69 @@ let lastTypeTime = 0;
 let finalPoemTitle = "";
 let finalPoemText = "";
 let poemLog = [];
+let actPoems = { 1: [], 2: [], 3: [] };
+
+// NEW: between-act poem popup
+let showActPoemModal = false;
+let actPoemTitle = "";
+let actPoemText = "";
+
+const LEADERBOARD_CONFIG = {
+  endpoint: "https://script.google.com/macros/s/AKfycbw9M02gUSnCAQOs2uAT87LSzqGR23vAlbamKKwzMBV9kp-mUnVwoayz5IHJLqiHv8mx5A/exec",
+  maxEntries: 20,
+  maxPoemChars: 900
+};
+
+let leaderboardEntries = [];
+let leaderboardBusy = false;
+
+function resetActPoems() {
+  actPoems = { 1: [], 2: [], 3: [] };
+}
+
+function pushActPoemLine(line, actNumber = act) {
+  const s = String(line || "").trim();
+  if (!s.length) return;
+  if (!actPoems[actNumber]) actPoems[actNumber] = [];
+  if (!actPoems[actNumber].includes(s)) actPoems[actNumber].push(s);
+}
+
+function cleanActLines(lines) {
+  return [...new Set((lines || [])
+    .map(l => String(l || "").trim())
+    .filter(t => t.length > 0)
+    .filter(isItemPoemLine))];
+}
+
+function buildActPoemSnapshot() {
+  const stanza1 = cleanActLines(actPoems[1]).join("\n");
+  const stanza2 = cleanActLines(actPoems[2]).join("\n");
+  const stanza3 = cleanActLines(actPoems[3]).join("\n");
+
+  if (act === 2) {
+    return stanza1;
+  }
+
+  if (act === 3) {
+    return [stanza1, stanza2].filter(Boolean).join("\n\n");
+  }
+
+  return [stanza1, stanza2, stanza3].filter(Boolean).join("\n\n");
+}
+
+function openActPoemModal(title, text) {
+  actPoemTitle = title;
+  actPoemText = text;
+  showActPoemModal = true;
+  paused = true;
+}
+
+function closeActPoemModal() {
+  showActPoemModal = false;
+  paused = false;
+  if (cnv && cnv.elt) cnv.elt.focus();
+}
+
 /* =========================
    HIDDEN FOCUS CACHE
 ========================= */
@@ -533,6 +523,15 @@ function setup() {
   finalModalEl = document.getElementById("final-modal");
   finalTitleEl = document.getElementById("final-title");
   finalBodyEl = document.getElementById("final-body");
+  leaderboardStatusEl = document.getElementById("leaderboard-status");
+  leaderboardListEl = document.getElementById("leaderboard-list");
+  poetNameInputEl = document.getElementById("poet-name");
+  sharePoemBtnEl = document.getElementById("share-poem-btn");
+  refreshBoardBtnEl = document.getElementById("refresh-board-btn");
+
+  bindLeaderboardUI();
+  hydratePoetName();
+  renderLeaderboard();
 
   computeCanvasSize();
 
@@ -660,6 +659,139 @@ function pickInteractTarget() {
   return nearestStationWorld(false);
 }
 
+function formatItemName(id) {
+  return String(id || "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function formatSequence(seq) {
+  return (seq || []).map(formatItemName).join(" → ");
+}
+
+function getCalibrationCandidates() {
+  return stations
+    .filter(s => s.id !== "door" && (s.kind === "core" || s.kind === "decor"))
+    .map(s => s.id);
+}
+
+function pickAct2TargetSeq() {
+  const pool = [...new Set(getCalibrationCandidates())];
+  const rand = mulberry32((runSeed ^ 0xA2C711) >>> 0);
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  act2TargetSeq = pool.slice(0, Math.min(3, pool.length));
+}
+
+function getNextCalibrationId() {
+  if (act2Calibrated) return null;
+  return act2TargetSeq[act2Progress] || null;
+}
+
+function getStationById(id) {
+  return stations.find(s => s.id === id) || null;
+}
+
+function nearestNonDoorInteractive() {
+  const list = stations.filter(s =>
+    s.id !== "door" &&
+    (s.kind === "core" || s.kind === "decor" || (s.kind === "hidden" && s.revealed))
+  );
+  let best = null;
+  let bestD = 1e9;
+  for (const s of list) {
+    const d = dist(player.x, player.y, s.x, s.y);
+    if (d < bestD) { bestD = d; best = s; }
+  }
+  return best;
+}
+
+function nearestAvailableSig() {
+  const list = stations.filter(s => s.kind === "hidden" && s.revealed);
+  let best = null;
+  let bestD = 1e9;
+  for (const s of list) {
+    const d = dist(player.x, player.y, s.x, s.y);
+    if (d < bestD) { bestD = d; best = s; }
+  }
+  return best;
+}
+
+function pickAct3Targets() {
+  const touched = [];
+  const seen = new Set();
+  for (const id of history) {
+    if (!id || id === "door" || id === "hidden") continue;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    if (getStationById(id)) touched.push(id);
+  }
+  const pool = touched.length ? touched : getCalibrationCandidates();
+  const rand = mulberry32((runSeed ^ 0xA37A37) >>> 0);
+  const copy = [...pool];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  act3TargetIds = copy.slice(0, Math.min(3, copy.length));
+}
+
+function markAct3Touch(id) {
+  if (act !== 3) return;
+  if (!act3TargetIds.includes(id)) return;
+  if (act3Touched.has(id)) return;
+  act3Touched.add(id);
+  queuePoemLine("You return to " + formatItemName(id) + ". The line changes because you came back.");
+}
+
+function getNextAct3Target() {
+  if (act !== 3) return null;
+  for (const id of act3TargetIds) {
+    if (!act3Touched.has(id)) return getStationById(id);
+  }
+  return null;
+}
+
+function canEnterAct3Door() {
+  return act === 3 && act3TargetIds.length > 0 && act3TargetIds.every(id => act3Touched.has(id));
+}
+
+function startAct2() {
+  act = 2;
+  actBannerFrames = 180;
+
+  act2SigCollected = 0;
+  act2Calibrated = false;
+  act2Seq = [];
+  act2TargetSeq = [];
+  act2Progress = 0;
+
+  pickAct2TargetSeq();
+
+  mutateRoom();
+  queuePoemLine("The room shifts. It was listening.");
+  queuePoemLine("Set the sequence: " + formatSequence(act2TargetSeq) + ".");
+  sfxDoorRumble();
+
+  openActPoemModal("Stanza I", buildActPoemSnapshot());
+}
+
+function startAct3() {
+  act = 3;
+  actBannerFrames = 180;
+  act3Touched = new Set();
+  pickAct3Targets();
+  queuePoemLine("The machine stops observing. It asks you to return.");
+  if (act3TargetIds.length) {
+    queuePoemLine("Revisit: " + formatSequence(act3TargetIds) + ". Then return to the door.");
+  }
+  sfxDoorRumble();
+
+  openActPoemModal("Stanza II", buildActPoemSnapshot());
+}
+
 /* ==========================================================
    RESET RUN
 ========================================================== */
@@ -670,6 +802,10 @@ function resetRun() {
   showFinalModal = false;
   finalPoemText = "";
 
+  showActPoemModal = false;
+  actPoemTitle = "";
+  actPoemText = "";
+
   mode = "world";
   focusId = null;
   focusImg = null;
@@ -678,15 +814,18 @@ function resetRun() {
 
   act = 1;
   actBannerFrames = 0;
-  resetActPoems();
 
   history = [];
   usedLines = new Set();
+  resetTypewriterState();
+  resetActPoems();
+  act2TargetSeq = [];
+  act3TargetIds = [];
+  act3Touched = new Set();
+
   act2SigCollected = 0;
   act2Calibrated = false;
-  act2Seq = [];
-  act3Touched = [];
-  resetTypewriterState();
+  act2Progress = 0;
 
   signal = 0;
   doorTrail.t = 0;
@@ -696,6 +835,8 @@ function resetRun() {
   pulse.r = 0;
   pulse.hit = false;
   pulse.speed = 18;
+
+  
 
   // Randomize world dimensions
   world.w = Math.floor(2400 + random(0, 1400));
@@ -759,6 +900,10 @@ function draw() {
   if (mode === "world") drawWorldMode();
   else drawFocusMode();
 
+  if (showActPoemModal) {
+    drawActPoemModal();
+  }
+
   updateUI();
 }
 
@@ -781,6 +926,12 @@ function openFinalModal() {
   if (finalModalEl) {
     finalModalEl.classList.add("is-open");
     finalModalEl.setAttribute("aria-hidden", "false");
+  }
+
+  renderLeaderboard();
+  refreshLeaderboard();
+  if (poetNameInputEl) {
+    setTimeout(() => poetNameInputEl.focus(), 0);
   }
 }
 
@@ -1055,10 +1206,16 @@ function drawTouchJoystick() {
 
 function getInteractButtonRect() {
   // Screen-space button for mobile (canvas coordinates)
-  const m = 14;                  // margin
-  const h = 44;                  // height
-  const w = 148;                 // width
-  return { x: CW - w - m, y: CH - h - m, w, h };
+  const m = 20;   // more inset from edges
+  const h = 52;   // slightly taller
+  const w = 170;  // slightly wider
+
+  return {
+    x: Math.max(m, CW - w - m),
+    y: Math.max(m, CH - h - m - 50), // lift it upward a bit
+    w,
+    h
+  };
 }
 
 function _ptInRect(px, py, r) {
@@ -1360,24 +1517,19 @@ function drawActBanner() {
   fill(0, 0, 0, 90);
   rect(0, 0, CW, CH);
 
-  let bannerTitle = "ACT 1";
-  let bannerSub = "THE ROOM SPEAKS";
-  if (act === 2) {
-    bannerTitle = "ACT 2";
-    bannerSub = "THE MACHINE NOTICES YOU";
-  } else if (act === 3) {
-    bannerTitle = "ACT 3";
-    bannerSub = "THE POEM WRITES YOU BACK";
-  }
+  const title = (act === 3) ? "ACT 3" : ((act === 2) ? "ACT 2" : "ACT 1");
+  const sub = (act === 3)
+    ? "THE POEM WRITES YOU BACK"
+    : ((act === 2) ? "THE MACHINE NOTICES YOU" : "THE ROOM SPEAKS");
 
   textAlign(CENTER, CENTER);
   fill(0, 255, 170, alpha);
   textSize(42 * S);
-  text(bannerTitle, CW * 0.5, CH * 0.42);
+  text(title, CW * 0.5, CH * 0.42);
 
   fill(0, 255, 170, alpha * 0.75);
   textSize(18 * S);
-  text(bannerSub, CW * 0.5, CH * 0.52);
+  text(sub, CW * 0.5, CH * 0.52);
 }
 
 /* ==========================================================
@@ -1447,7 +1599,10 @@ function canEnterDoorState() {
 }
 
 function canFinalizePoem() {
-  return act === 3 && canEnterAct3Door();
+  if (act === 3) return canEnterAct3Door();
+  const hasDoor = history.includes("door");
+  const nonDoorCount = history.filter(h => h !== "door").length;
+  return hasDoor && nonDoorCount >= 2;
 }
 
 function drawCompassArrow() {
@@ -1471,13 +1626,9 @@ function drawCompassArrow() {
   rotate(angle);
 
   noStroke();
-  if (target.compassType === "sig") {
-    fill(0, 255, 220, 235);
-  } else if (target.compassType === "object") {
-    fill(255, 220, 120, 230);
-  } else {
-    fill(0, 255, 170, 230);
-  }
+  if (target.compassType === "sig") fill(0, 255, 220, 235);
+  else if (target.compassType === "object") fill(255, 220, 120, 230);
+  else fill(0, 255, 170, 230);
 
   triangle(0, 0, -16, -9, -16, 9);
   pop();
@@ -1509,6 +1660,12 @@ function getCompassTarget() {
     return door ? { ...door, compassType: "door" } : null;
   }
 
+  if (act === 3) {
+    const nextObj = getNextAct3Target();
+    if (nextObj) return { ...nextObj, compassType: "object" };
+    return door ? { ...door, compassType: "door" } : null;
+  }
+
   return door ? { ...door, compassType: "door" } : null;
 }
 
@@ -1541,111 +1698,6 @@ function nearestAvailableSig() {
       bestD = d;
       best = s;
     }
-  }
-  return best;
-}
-
-function getCompassTarget() {
-  const door = getDoor();
-
-  // ACT 1:
-  // Before enough interactions, guide to nearest non-door object.
-  // After enough interactions, guide to the door.
-  if (act === 1) {
-    if (!canEnterDoorState()) {
-      const obj = nearestNonDoorInteractive();
-      return obj ? { ...obj, compassType: "object" } : null;
-    }
-    return door ? { ...door, compassType: "door" } : null;
-  }
-
-  // ACT 2:
-  // If not calibrated, guide to the next required calibration object.
-  if (act === 2) {
-    if (!act2Calibrated) {
-      const nextObj = getNextCalibrationObject();
-      if (nextObj) return { ...nextObj, compassType: "object" };
-    }
-
-    // After calibration, guide to nearest unrevealed/reachable SIG until enough are collected.
-    if (act2SigCollected < 2) {
-      const sig = nearestAvailableSig();
-      if (sig) return { ...sig, compassType: "sig" };
-    }
-
-    // Once objectives are complete, guide back to the door.
-    return door ? { ...door, compassType: "door" } : null;
-  }
-
-  // ACT 3:
-  // If the player still needs revision revisits, guide to the next needed object.
-  if (act === 3 && typeof getNextAct3Target === "function") {
-    const reviseTarget = getNextAct3Target();
-    if (reviseTarget) return { ...reviseTarget, compassType: "object" };
-  }
-
-  return door ? { ...door, compassType: "door" } : null;
-}
-
-function nearestNonDoorInteractive() {
-  const list = stations.filter(s =>
-    s.id !== "door" &&
-    (s.kind === "core" || s.kind === "decor" || (s.kind === "hidden" && s.revealed))
-  );
-
-  let best = null;
-  let bestD = 1e9;
-
-  for (const s of list) {
-    const d = dist(player.x, player.y, s.x, s.y);
-    if (d < bestD) {
-      bestD = d;
-      best = s;
-    }
-  }
-
-  return best;
-}
-
-function getNextCalibrationObject() {
-  // Current build still hardcodes lamp -> mirror -> desk.
-  const targetSeq = ["lamp", "mirror", "desk"];
-
-  for (let i = 0; i < act2Seq.length; i++) {
-    if (act2Seq[i] !== targetSeq[i]) {
-      return stations.find(s => s.id === targetSeq[0]) || null;
-    }
-  }
-
-  const nextId = targetSeq[act2Seq.length] || null;
-  if (!nextId) return null;
-
-  return stations.find(s => s.id === nextId) || null;
-}
-
-function nearestAvailableSig() {
-  const list = stations.filter(s => s.kind === "hidden" && s.revealed);
-
-  let best = null;
-  let bestD = 1e9;
-
-  for (const s of list) {
-    const d = dist(player.x, player.y, s.x, s.y);
-    if (d < bestD) {
-      bestD = d;
-      best = s;
-    }
-  }
-
-  return best;
-}
-
-function nearestNonDoorCore() {
-  const list = stations.filter(s => s.kind === "core" && s.id !== "door");
-  let best = null, bestD = 1e9;
-  for (const s of list) {
-    const d = dist(player.x, player.y, s.x, s.y);
-    if (d < bestD) { bestD = d; best = s; }
   }
   return best;
 }
@@ -1671,43 +1723,37 @@ function drawSignalMeter() {
   textSize(12 * S);
   text("SIGNAL " + signal + "/6", x + 6 * S, y + h * 0.5);
 }
-function startAct2() {
-  act = 2;
-  actBannerFrames = 180;
 
-  act2SigCollected = 0;
-  act2Calibrated = false;
-  act2Seq = [];
-  pickAct2TargetSeq();
+function handleAct2CalibrationTouch(id) {
+  if (act !== 2 || act2Calibrated) return;
+  if (!act2TargetSeq.includes(id)) return;
 
-  mutateRoom();
-  queuePoemLine("The room shifts. It was listening.");
-  queuePoemLine("Set the sequence: " + formatSequence(act2TargetSeq) + ".");
-  sfxDoorRumble();
+  const expectedId = act2TargetSeq[act2Progress];
+
+  if (id === expectedId) {
+    act2Progress++;
+
+    if (act2Progress >= act2TargetSeq.length) {
+      act2Calibrated = true;
+      queuePoemLine("Calibration complete. The room stops resisting your order.");
+      sfxBlip(980, 0.001, 0.06, 0.22);
+
+      pulse.active = true;
+      pulse.r = 0;
+      pulse.hit = false;
+      sfxBlip(420, 0.001, 0.06, 0.30);
+    }
+  } else {
+    act2Progress = (id === act2TargetSeq[0]) ? 1 : 0;
+    queuePoemLine("The sequence slips. Start it again.");
+    sfxDenied();
+  }
 }
 
-function startAct3() {
-  act = 3;
-  actBannerFrames = 180;
-  act3Touched = [];
-
-  queuePoemLine("The machine stops observing. It starts negotiating.");
-  queuePoemLine("Return to what you touched. Decide what remains.");
-  sfxDoorRumble();
-}
-
-  // -------------------------
-  // DOOR
-  // -------------------------
 function coreAction(id) {
   addInteractionPoetry(id);
 
-  // -------------------------
-  // DOOR LOGIC
-  // -------------------------
   if (id === "door") {
-
-    // ACT 1 → ACT 2
     if (act === 1) {
       if (!canEnterDoorState()) {
         queuePoemLine("The door refuses entry. Bring it more lines first.");
@@ -1715,38 +1761,40 @@ function coreAction(id) {
         enterFocus("door");
         return;
       }
-
       startAct2();
       return;
     }
 
-    // ACT 2 → ACT 3
-  if (act === 2) {
-  // Only calibration candidates should affect the calibration sequence.
-  if (act2TargetSeq.includes(id)) {
-    act2Seq.push(id);
+    if (act === 2) {
+      if (!act2Calibrated || act2SigCollected < 2) {
+        const needSig = Math.max(0, 2 - act2SigCollected);
+        queuePoemLine(
+          "The door waits for the right sequence. Press E on " +
+          formatSequence(act2TargetSeq) +
+          ". Then find " + needSig + " more SIG."
+        );
+        sfxDenied();
+        enterFocus("door");
+        return;
+      }
 
-    if (act2Seq.length > act2TargetSeq.length) {
-      act2Seq.shift();
+      startAct3();
+      return;
     }
 
-    const seq = act2Seq.join(",");
-    const target = act2TargetSeq.join(",");
-
-    if (!act2Calibrated && seq === target) {
-      act2Calibrated = true;
-
-      queuePoemLine(
-        "Calibration complete. The room stops resisting your order."
-      );
-
-      sfxBlip(980, 0.001, 0.06, 0.22);
-    }
-  }
-}
-
-    // ACT 3 → focus door
     if (act === 3) {
+      if (!canEnterAct3Door()) {
+        const nextObj = getNextAct3Target();
+        queuePoemLine(
+          nextObj
+            ? ("The door waits. Revisit " + formatItemName(nextObj.id) + " before you seal the poem.")
+            : "The door waits for the final revisions."
+        );
+        sfxDenied();
+        enterFocus("door");
+        return;
+      }
+
       doorTrail.t = Math.max(doorTrail.t, Math.floor(190 + signal * 35));
       sfxDoorRumble();
       enterFocus("door");
@@ -1754,55 +1802,22 @@ function coreAction(id) {
     }
   }
 
-  // -------------------------
-  // OBJECT MUTATIONS
-  // -------------------------
-
   if (id === "lamp") {
     fractal.baseWarp = clamp01(fractal.baseWarp + 0.10);
     fractal.baseZoom = constrain(fractal.baseZoom * 1.10, 0.6, 18.0);
     sfxInteractHigh();
-  }
-
-  else if (id === "mirror") {
+  } else if (id === "mirror") {
     fractal.baseCenter.x += random(-0.08, 0.08) / Math.max(fractal.baseZoom, 0.001);
     fractal.baseCenter.y += random(-0.08, 0.08) / Math.max(fractal.baseZoom, 0.001);
     fractal.baseZoom = constrain(fractal.baseZoom * 1.06, 0.6, 18.0);
     sfxInteractMid();
-  }
-
-  else if (id === "desk") {
+  } else if (id === "desk") {
     fractal.iters = Math.min(520, fractal.iters + 28);
     fractal.baseZoom = constrain(fractal.baseZoom * 1.06, 0.6, 18.0);
     sfxInteractLow();
   }
 
-  // -------------------------
-  // ACT 2 CALIBRATION
-  // -------------------------
-
-  if (act === 2) {
-  if (act2TargetSeq.includes(id)) {
-    act2Seq.push(id);
-
-    if (act2Seq.length > act2TargetSeq.length) {
-      act2Seq.shift();
-    }
-
-    const seq = act2Seq.join(",");
-    const target = act2TargetSeq.join(",");
-
-    if (!act2Calibrated && seq === target) {
-      act2Calibrated = true;
-
-      queuePoemLine(
-        "Calibration complete. The room stops resisting your order."
-      );
-
-      sfxBlip(980, 0.001, 0.06, 0.22);
-    }
-  }
-}
+  handleAct2CalibrationTouch(id);
 
   if (act === 3) markAct3Touch(id);
 
@@ -1831,6 +1846,8 @@ function decorAction(id) {
   if (pick === 0) sfxInteractLow();
   else if (pick === 1) sfxInteractMid();
   else sfxInteractHigh();
+
+  handleAct2CalibrationTouch(id);
 
   if (act === 3) markAct3Touch(id);
 
@@ -1889,7 +1906,7 @@ function exitFocus() {
    INPUT
 ========================================================== */
 function tryInteract() {
-  if (paused) return false;
+  if (paused || showActPoemModal) return false;
 
   if (mode === "focus") {
     if (focusId === "door" && canFinalizePoem()) {
@@ -1908,36 +1925,64 @@ function tryInteract() {
 }
 
 function keyPressed() {
-  armAudioIfNeeded();
-  if (cnv && cnv.elt) cnv.elt.focus();
+  const ae = document.activeElement;
+  const isTypingField =
+    ae &&
+    (ae.tagName === "INPUT" ||
+     ae.tagName === "TEXTAREA" ||
+     ae.isContentEditable);
 
+  // Final poem modal
   if (showFinalModal) {
-    if (keyCode === 32) {
-      if (ttsEnabled) {
-        if (speaking) stopTTS();
-        else speakText(finalPoemText);
+    if (isTypingField) {
+      if (keyCode === ESCAPE) {
+        closeFinalModal();
+        return false;
       }
+      return true;
+    }
+
+    if (keyCode === ESCAPE) {
+      closeFinalModal();
       return false;
     }
-    if (keyCode === ESCAPE) { closeFinalModal(); return false; }
-    if (key === "r" || key === "R") { restartRun(); return false; }
+
+    if (keyCode === 32) {
+      toggleFinalSpeech();
+      return false;
+    }
+
+    return false;
+  }
+
+  if (showActPoemModal) {
+    if (keyCode === ESCAPE || keyCode === 32 || key === "e" || key === "E") {
+      closeActPoemModal();
+      return false;
+    }
     return false;
   }
 
   if (keyCode === ESCAPE) {
-    if (mode === "focus") exitFocus();
-    else paused = !paused;
+    paused = !paused;
     return false;
   }
 
-  if (key === "r" || key === "R") { restartRun(); return false; }
+  if (key === "r" || key === "R") {
+    resetRun();
+    return false;
+  }
 
   if (key === "q" || key === "Q") {
-    if (mode === "world" && !paused) {
+    if (!paused && !showActPoemModal && !showFinalModal) {
       pulse.active = true;
       pulse.r = 0;
       pulse.hit = false;
       sfxBlip(420, 0.001, 0.06, 0.30);
+
+      if (mode === "focus") {
+        doorTrail.t = doorTrail.maxT;
+      }
     }
     return false;
   }
@@ -1949,8 +1994,21 @@ function keyPressed() {
   return false;
 }
 
-function mousePressed() {
+document.addEventListener("DOMContentLoaded", () => {
+  const poetNameInput = document.getElementById("poet-name");
+  if (poetNameInput) {
+    poetNameInput.addEventListener("keydown", (e) => e.stopPropagation());
+    poetNameInput.addEventListener("keyup", (e) => e.stopPropagation());
+    poetNameInput.addEventListener("click", (e) => e.stopPropagation());
+  }
+});
+
+function mousePressed(event) {
   armAudioIfNeeded();
+  const target = event && event.target ? event.target : null;
+  if (showFinalModal && target && (target.closest(".leaderboard-panel") || target.closest("#final-modal input") || target.closest("#final-modal button"))) {
+    return;
+  }
   if (cnv && cnv.elt) cnv.elt.focus();
 }
 
@@ -2055,22 +2113,296 @@ function restartRun() {
   resetRun();
 }
 
-function closeFinalModal() {
-  stopTTS();
-  showFinalModal = false;
-  paused = false;
-  mode = "world";
-  focusId = null;
-  focusImg = null;
-  focusZoom = 1.35;
-  focusZoomTarget = 1.35;
+function bindLeaderboardUI() {
+  if (sharePoemBtnEl) sharePoemBtnEl.addEventListener("click", submitCurrentPoemToLeaderboard);
+  if (refreshBoardBtnEl) refreshBoardBtnEl.addEventListener("click", refreshLeaderboard);
+  if (poetNameInputEl) {
+    poetNameInputEl.addEventListener("change", persistPoetName);
+    poetNameInputEl.addEventListener("input", persistPoetName);
+    poetNameInputEl.addEventListener("blur", persistPoetName);
+    ["keydown", "keyup", "keypress", "click", "mousedown", "pointerdown", "touchstart"].forEach(type => {
+      poetNameInputEl.addEventListener(type, (e) => e.stopPropagation());
+    });
+  }
+}
 
-  if (finalModalEl) {
-    finalModalEl.classList.remove("is-open");
-    finalModalEl.setAttribute("aria-hidden", "true");
+function hydratePoetName() {
+  if (!poetNameInputEl) return;
+  try {
+    const saved = localStorage.getItem("poemRoom.poetName") || "";
+    poetNameInputEl.value = saved;
+  } catch (err) {
+    // ignore localStorage failures
+  }
+}
+
+function persistPoetName() {
+  if (!poetNameInputEl) return;
+  try {
+    localStorage.setItem("poemRoom.poetName", String(poetNameInputEl.value || "").trim().slice(0, 24));
+  } catch (err) {
+    // ignore localStorage failures
+  }
+}
+
+function isLeaderboardEnabled() {
+  return !!(LEADERBOARD_CONFIG.endpoint && String(LEADERBOARD_CONFIG.endpoint).trim().length);
+}
+
+function setLeaderboardStatus(message) {
+  if (leaderboardStatusEl) leaderboardStatusEl.textContent = message;
+}
+
+function setLeaderboardBusy(isBusy) {
+  leaderboardBusy = !!isBusy;
+  if (sharePoemBtnEl) sharePoemBtnEl.disabled = leaderboardBusy || !isLeaderboardEnabled();
+  if (refreshBoardBtnEl) refreshBoardBtnEl.disabled = leaderboardBusy || !isLeaderboardEnabled();
+}
+
+function escapeHtml(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function formatLeaderboardDate(value) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function poemShareScore(text) {
+  const lines = String(text || "").split(/\n+/).map(s => s.trim()).filter(Boolean);
+  const unique = new Set(lines.map(s => s.toLowerCase()));
+  return unique.size;
+}
+
+
+function getLocalPoetryEntries() {
+  try {
+    const raw = localStorage.getItem("poemRoom.poetryCommonsEntries") || "[]";
+    const rows = JSON.parse(raw);
+    return Array.isArray(rows) ? rows : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function saveLocalPoetryEntries(entries) {
+  try {
+    localStorage.setItem("poemRoom.poetryCommonsEntries", JSON.stringify(entries.slice(0, LEADERBOARD_CONFIG.maxEntries)));
+  } catch (err) {
+    // ignore storage failures
+  }
+}
+
+function normalizePoetryRows(rows) {
+  return rows
+    .map(row => ({
+      name: String(row.name || "anonymous observer").slice(0, 24),
+      title: String(row.title || "UNTITLED POEM").slice(0, 80),
+      text: String(row.text || row.poem || "").slice(0, LEADERBOARD_CONFIG.maxPoemChars),
+      score: Number(row.score || 0),
+      createdAt: row.createdAt || row.timestamp || ""
+    }))
+    .sort((a, b) => (b.score - a.score) || String(b.createdAt).localeCompare(String(a.createdAt)))
+    .slice(0, LEADERBOARD_CONFIG.maxEntries);
+}
+
+function buildLeaderboardPayload() {
+  const name = poetNameInputEl && poetNameInputEl.value.trim() ? poetNameInputEl.value.trim().slice(0, 24) : "anonymous observer";
+  const title = String(finalPoemTitle || buildFinalPoemTitle() || "UNTITLED POEM").trim();
+  const text = String(finalPoemText || buildFinalPoemText() || "").trim().slice(0, LEADERBOARD_CONFIG.maxPoemChars);
+  return {
+    name,
+    title,
+    text,
+    score: poemShareScore(text),
+    seed: runSeed,
+    createdAt: new Date().toISOString()
+  };
+}
+
+function renderLeaderboard() {
+  if (!leaderboardListEl) return;
+
+  if (!isLeaderboardEnabled()) {
+    setLeaderboardStatus("Poetry Commons is offline until a sharing endpoint is configured.");
+    leaderboardListEl.innerHTML = '<div class="leaderboard-empty">Poetry Commons is offline right now. Add LEADERBOARD_CONFIG.endpoint to turn on shared poems.</div>';
+    setLeaderboardBusy(false);
+    return;
   }
 
-  if (cnv && cnv.elt) cnv.elt.focus();
+  if (!leaderboardEntries.length) {
+    leaderboardListEl.innerHTML = '<div class="leaderboard-empty">No poems have been shared here yet.</div>';
+    return;
+  }
+
+  leaderboardListEl.innerHTML = leaderboardEntries.map((entry, index) => {
+    const rank = index + 1;
+    const when = formatLeaderboardDate(entry.createdAt);
+    return `
+      <div class="leaderboard-entry">
+        <div class="leaderboard-meta">
+          <div class="leaderboard-name">${escapeHtml(entry.name || "anonymous observer")}</div>
+          <div class="leaderboard-date">${escapeHtml(when)}</div>
+        </div>
+        <div class="leaderboard-poem-title">${escapeHtml(entry.title || "UNTITLED POEM")}</div>
+        <div class="leaderboard-poem-text">${escapeHtml(entry.text || "")}</div>
+      </div>
+    `;
+  }).join("");
+}
+
+function loadLeaderboardJSONP(limit = 20) {
+  return new Promise((resolve, reject) => {
+    const callbackName = "poemBoardCallback_" + Date.now();
+    const script = document.createElement("script");
+
+    window[callbackName] = (data) => {
+      try {
+        resolve(data);
+      } finally {
+        delete window[callbackName];
+        script.remove();
+      }
+    };
+
+    const sep = LEADERBOARD_CONFIG.endpoint.includes("?") ? "&" : "?";
+    script.src =
+      `${LEADERBOARD_CONFIG.endpoint}${sep}action=list&limit=${encodeURIComponent(limit)}&callback=${encodeURIComponent(callbackName)}`;
+
+    console.log("JSONP URL:", script.src);
+
+    script.onerror = () => {
+      console.error("JSONP failed for:", script.src);
+      delete window[callbackName];
+      script.remove();
+      reject(new Error("Poetry Commons request failed."));
+    };
+
+    document.body.appendChild(script);
+  });
+}
+
+function submitPoemViaForm(payload) {
+  return new Promise((resolve) => {
+    const form = document.getElementById("poem-submit-form");
+    if (!form) {
+      console.error("Missing #poem-submit-form in index.html");
+      resolve({ ok: false });
+      return;
+    }
+
+    form.action = LEADERBOARD_CONFIG.endpoint;
+    form.innerHTML = "";
+
+    const fields = {
+      action: "submit",
+      name: payload.name || "",
+      title: payload.title || "",
+      text: payload.text || "",
+      score: String(payload.score || 0),
+      createdAt: payload.createdAt || ""
+    };
+
+    for (const [key, value] of Object.entries(fields)) {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = key;
+      input.value = value;
+      form.appendChild(input);
+    }
+
+    form.submit();
+
+    setTimeout(() => {
+      resolve({ ok: true });
+    }, 1200);
+  });
+}
+
+async function refreshLeaderboard() {
+  if (!isLeaderboardEnabled()) {
+    leaderboardEntries = normalizePoetryRows(getLocalPoetryEntries());
+    setLeaderboardStatus("Poetry Commons is running in local mode.");
+    renderLeaderboard();
+    return;
+  }
+
+  setLeaderboardBusy(true);
+  setLeaderboardStatus("Loading Poetry Commons...");
+
+  try {
+    const data = await loadLeaderboardJSONP(LEADERBOARD_CONFIG.maxEntries);
+    const rows = Array.isArray(data)
+      ? data
+      : (Array.isArray(data.entries) ? data.entries : []);
+
+    leaderboardEntries = normalizePoetryRows(rows);
+    saveLocalPoetryEntries(leaderboardEntries);
+
+    setLeaderboardStatus("Poetry Commons is live.");
+    renderLeaderboard();
+  } catch (err) {
+    console.error(err);
+    leaderboardEntries = normalizePoetryRows(getLocalPoetryEntries());
+    if (leaderboardEntries.length) {
+      setLeaderboardStatus("Using locally cached poems while Poetry Commons reconnects.");
+    } else {
+      setLeaderboardStatus("Could not load Poetry Commons right now. Local sharing is still available in this browser.");
+    }
+    renderLeaderboard();
+  } finally {
+    setLeaderboardBusy(false);
+  }
+}
+
+async function submitCurrentPoemToLeaderboard() {
+  if (!showFinalModal) return;
+
+  persistPoetName();
+  const payload = buildLeaderboardPayload();
+
+  if (!payload.text.length) {
+    setLeaderboardStatus("Finish a poem before sharing it.");
+    return;
+  }
+
+  const localEntries = normalizePoetryRows([payload, ...getLocalPoetryEntries()]);
+  saveLocalPoetryEntries(localEntries);
+  leaderboardEntries = localEntries;
+  renderLeaderboard();
+
+  if (!isLeaderboardEnabled()) {
+    setLeaderboardStatus("Poem saved locally in this browser.");
+    return;
+  }
+
+  setLeaderboardBusy(true);
+  setLeaderboardStatus("Sharing your poem...");
+
+  try {
+    const result = await submitPoemViaForm(payload);
+
+    if (!result.ok) {
+      throw new Error("Poetry Commons submit failed.");
+    }
+
+    setLeaderboardStatus("Poem shared to Poetry Commons.");
+
+    setTimeout(() => {
+      refreshLeaderboard();
+    }, 1600);
+  } catch (err) {
+    console.error(err);
+    setLeaderboardStatus("Saved locally. Remote Poetry Commons share did not complete.");
+  } finally {
+    setLeaderboardBusy(false);
+  }
 }
 
 /* ==========================================================
@@ -2135,6 +2467,40 @@ function drawFocusMode() {
   }
 
   drawTouchButtons();
+}
+
+function drawActPoemModal() {
+  noStroke();
+  fill(0, 0, 0, 170);
+  rect(0, 0, CW, CH);
+
+  const panelW = Math.min(CW * 0.78, 760 * S);
+  const panelH = Math.min(CH * 0.72, 560 * S);
+  const px = (CW - panelW) * 0.5;
+  const py = (CH - panelH) * 0.5;
+
+  fill(0, 28, 0, 240);
+  stroke(0, 255, 170, 150);
+  strokeWeight(Math.max(2.0 * S, 2));
+  rect(px, py, panelW, panelH, 10 * S);
+
+  const pad = 18 * S;
+  const tx = px + pad;
+  const ty = py + pad;
+
+  noStroke();
+  fill(0, 255, 170, 240);
+  textAlign(LEFT, TOP);
+  textSize(20 * S);
+  text(actPoemTitle, tx, ty);
+
+  fill(0, 255, 170, 170);
+  textSize(12 * S);
+  text("E / SPACE / ESC to continue", tx, ty + 28 * S);
+
+  fill(0, 255, 170, 235);
+  textSize(15 * S);
+  text(actPoemText, tx, ty + 58 * S, panelW - pad * 2, panelH - 84 * S);
 }
 
 /* ==========================================================
@@ -2232,36 +2598,25 @@ function addInteractionPoetry(id) {
   history.push(id);
 
   const nonDoorCount = history.filter(h => h !== "door").length;
-
-  // The more you interact, the more lines the room writes back.
-  // 1 line early, then gradually ramps up.
-  let linesThisHit = 1 + Math.floor(Math.max(0, nonDoorCount - 1) / 2); // 1,1,2,2,3...
+  let linesThisHit = 1 + Math.floor(Math.max(0, nonDoorCount - 1) / 2);
   if (signal >= 3) linesThisHit += 1;
   if (signal >= 5) linesThisHit += 1;
   linesThisHit = Math.min(linesThisHit, 6);
-
-  // Door interactions should not spam the HUD.
   if (id === "door") linesThisHit = 1;
 
   const r = mulberry32((runSeed ^ idHash(id) ^ (history.length * 0x9E3779B9)) >>> 0);
-
   const bucket = LINES[id] || ["Something responds, quietly."];
 
-  // A small chance to bridge with a connector when there's context.
   if (history.length >= 2 && r() < 0.55) {
     queuePoemLine(pickUniqueLine(CONNECTORS, id + ":connector:" + history.length));
   }
 
-  // Always include at least one object-specific line.
   const baseLine = pickUniqueLine(bucket, id + ":base:" + history.length);
   queuePoemLine(baseLine);
   if (id !== "door" && id !== "hidden") pushActPoemLine(baseLine);
 
-  // Then add extra lines based on growth.
   for (let k = 1; k < linesThisHit; k++) {
     const roll = r();
-
-    // Prefer deeper vocab as SIGNAL grows.
     if (signal > 0 && roll < 0.26) {
       queuePoemLine(pickUniqueLine(SIGNAL_LINES, id + ":signal:" + k));
       continue;
@@ -2270,14 +2625,11 @@ function addInteractionPoetry(id) {
       queuePoemLine(pickUniqueLine(MUTATION_LINES, id + ":mut:" + k));
       continue;
     }
-
-    // Occasional glitch flavor.
     if (roll < 0.58) {
       queuePoemLine(pickUniqueLine(GLITCH_LINES, id + ":glitch:" + k));
       continue;
     }
 
-    // Otherwise, echo the object bucket again with a different salt.
     const echoLine = pickUniqueLine(bucket, id + ":echo:" + k);
     queuePoemLine(echoLine);
     if (id !== "door" && id !== "hidden") pushActPoemLine(echoLine);
@@ -2285,7 +2637,6 @@ function addInteractionPoetry(id) {
 }
 
 function getPoemLinesForFinal() {
-  // Include completed lines, any currently-typing line, and anything queued.
   const out = [];
   for (const l of poemLog) out.push(l);
   if (heldLine && heldLine.trim().length) out.push(heldLine);
@@ -2321,7 +2672,6 @@ function buildFinalPoemText() {
 
   return [stanza1, stanza2, stanza3].filter(Boolean).join("\n\n");
 }
-
 function pickUniqueLine(bucket, salt) {
   const saltN = (typeof salt === "string") ? idHash(salt) : salt;
   const rand = mulberry32((runSeed ^ (history.length * 1337) ^ saltN) >>> 0);
@@ -2602,79 +2952,58 @@ function updateUI() {
 
   promptEl.classList.remove("urgent");
 
-  // ACT title: big red
   const actTitle = (act === 3) ? "ACT 3" : ((act === 2) ? "ACT 2" : "ACT 1");
-
-  // Signal line always lives under ACT title now
   const signalLine = (signal > 0)
     ? ("SIGNAL " + signal + "/6: withheld words unlocked.")
     : "No SIGNAL yet: SIG nodes are withheld words.";
 
-  // Build the “objects” instruction line (subtitle) based on state
   let subtitle = "";
 
   if (showFinalModal) {
     subtitle = "Final poem. ESC closes. R restarts. Space speaks.";
   } else if (mode === "focus") {
-    if (focusId === "door" && canFinalizePoem()) {
-      subtitle = "Door ready. Press E to seal. Mouse wheel zoom.";
-    } else {
-      subtitle = "Focus view. Mouse wheel zoom. E or ESC closes. Q pings door.";
-    }
+    if (focusId === "door" && canFinalizePoem()) subtitle = "Door ready. Press E to seal. Mouse wheel zoom.";
+    else subtitle = "Focus view. Mouse wheel zoom. E or ESC closes. Q pings door.";
   } else if (paused) {
     subtitle = "Paused. ESC returns. R restarts.";
   } else {
     const nonDoorCount = history.filter(h => h !== "door").length;
     const need = Math.max(0, 2 - nonDoorCount);
-
     const near = pickInteractTarget();
     const inRange = near.s && near.d <= INTERACT_RADIUS;
 
-    // Act-specific task prompt has priority in world mode
-    if (act === 2) {
-      const needSig = Math.max(0, 2 - act2SigCollected);
-      if (act === 2) {
-    const needSig = Math.max(0, 2 - act2SigCollected);
-
-    if (!act2Calibrated) {
-      const nextId = getNextCalibrationId();
-      subtitle =
-        "Set the sequence: " + formatSequence(act2TargetSeq) +
-        ". Next: " + formatItemName(nextId) +
-        ". Then find " + needSig + " SIG.";
-    } else {
-      subtitle = "Calibration complete. Find " + needSig + " SIG, then return to the door.";
-    }
-
-    if (!act2Calibrated || needSig > 0) promptEl.classList.add("urgent");
-  }
-      if (!act2Calibrated || needSig > 0) promptEl.classList.add("urgent");
-    } else if (act === 3) {
-      const need = Math.max(0, ACT3_GOAL - act3Touched.length);
-      subtitle = (need > 0)
-        ? ("Revise the poem. Revisit " + need + " more object(s), then return to the door.")
-        : "Door ready. Return to the threshold and seal the poem.";
-      if (need > 0) promptEl.classList.add("urgent");
-    } else if (inRange) {
-      if (act === 1 && need > 0 && near.s && near.s.id === "door") {
+    if (act === 1) {
+      if (inRange && need > 0 && near.s && near.s.id === "door") {
         subtitle = "The door wants more. Find " + need + " more object(s).";
         promptEl.classList.add("urgent");
-      } else {
-        subtitle = "Press E to interact. Q pings the door.";
-      }
-    } else {
-      if (act === 1 && need > 0) {
+      } else if (need > 0) {
         subtitle = "Explore. Find " + need + " more object(s). Hidden SIG nodes deepen SIGNAL.";
         promptEl.classList.add("urgent");
       } else if (!history.includes("door")) {
         subtitle = "You have enough lines. Find the door. Press Q to ping it.";
       } else {
-        subtitle = "Return to the door. View it and press E to seal.";
+        subtitle = "Return to the door. View it and press E to continue.";
+      }
+    } else if (act === 2) {
+      const needSig = Math.max(0, 2 - act2SigCollected);
+      if (!act2Calibrated) {
+        const nextId = getNextCalibrationId();
+        subtitle = "Set the sequence: " + formatSequence(act2TargetSeq) + ". Next: " + formatItemName(nextId) + ". Then find " + needSig + " SIG.";
+      } else {
+        subtitle = "Calibration complete. Find " + needSig + " SIG, then return to the door.";
+      }
+      if (!act2Calibrated || needSig > 0) promptEl.classList.add("urgent");
+    } else {
+      const nextObj = getNextAct3Target();
+      if (nextObj) {
+        subtitle = "Revisit " + formatItemName(nextObj.id) + ". Then return to the door.";
+        promptEl.classList.add("urgent");
+      } else {
+        subtitle = "All revisions complete. Return to the door and seal the poem.";
       }
     }
   }
 
-  // Render ACT box as 3 lines
   promptEl.innerHTML = `
     <div class="act-left">
       <div class="act-title">${esc(actTitle)}</div>
@@ -2686,7 +3015,7 @@ function updateUI() {
   `;
 }
 
-/* ==========================================================
+/* ========================================================== 
    FRACTAL ANIMATION + RENDER
 ========================================================== */
 function updateFractalAnimation() {

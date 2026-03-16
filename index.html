@@ -5,21 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>The Poem Room</title>
 
-  <link rel="stylesheet" href="style.css" />
-  <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style_poetry_commons.css" />
+  <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet" />
   <link rel="icon" href="favicon.ico" />
 </head>
 
 <body>
   <header class="hud-top">
-    <!-- Left column, row 1 -->
     <div id="prompt" class="prompt"></div>
 
-    <div class="divider"></div>
-     
-    <!-- Right column, spans rows 1 and 2 -->
-    <div class="rightpanels">
-      <div class="controls-box">
+    <aside class="rightpanels">
+      <section class="controls-box">
         <div class="panel-title">Controls</div>
         <div><span class="control-label">Move:</span> WASD or Arrows</div>
         <div><span class="control-label">Interact:</span> E</div>
@@ -28,62 +24,90 @@
         <div><span class="control-label">Speak Final:</span> Space</div>
         <div><span class="control-label">Find Door:</span> Q</div>
         <div><span class="control-label">Restart:</span> R</div>
-        <p></p>
-      </div>
+      </section>
 
-      <div class="divider"></div> 
+      <section class="howto-box">
+        <div class="panel-title">How to Play</div>
 
-      <div class="howto-box">
-      <div class="panel-title">How to Play</div>
+        <div class="howto-p">
+          This is a collaboration between you and the computer. You do the noticing and choosing. The computer does the remembering and remixing.
+        </div>
 
-      <div class="howto-p">
-        This is a collaboration between you and the computer. You do the noticing and choosing. The computer does the remembering and remixing.
-      </div>
+        <div class="howto-p">
+          <b>Why a room?</b> A room is a small universe with rules. It is a container for randomness. Each object is a different kind of language.
+        </div>
 
-      <div class="howto-p">
-        <b>Why a room?</b> A room is a small universe with rules. It is a container for randomness. Each object is a different kind of language.
-      </div>
+        <div class="panel-sub">THE THREE ACTS</div>
 
-      <div class="panel-sub">THE THREE ACTS</div>
+        <div class="howto-p">
+          <b>Act I</b> - Explore the room and interact with objects to collect lines for the poem.
+        </div>
 
-      <div class="howto-p">
-        <b>Act I</b> — Explore the room and interact with objects to collect lines for the poem.
-      </div>
+        <div class="howto-p">
+          <b>Act II</b> - Follow the required object sequence and gather hidden SIG.
+        </div>
 
-      <div class="howto-p">
-        <b>Act II</b> — Follow the required object sequence and gather hidden SIG.
-      </div>
+        <div class="howto-p">
+          <b>Act III</b> - Revisit the objects the room asks for, then return to the door to seal the final poem.
+        </div>
+      </section>
+    </aside>
 
-      <div class="howto-p">
-        <b>Act III</b> — Revisit the objects the room asks for, then return to the door to seal the final poem.
-      </div>
-      <p></p>
-    </div>
-    </div>
-
-    <!-- Left column, row 2 -->
     <div id="game-frame" class="game-frame"></div>
-
-    <!-- Full width, row 3 -->
     <pre id="poem" class="poem"></pre>
   </header>
 
-    <!-- FINAL POEM MODAL (scrollable, mobile-friendly) -->
-    <div id="final-modal" class="final-modal" aria-hidden="true">
+  <div id="final-modal" class="final-modal" aria-hidden="true">
     <div class="final-panel">
-
       <div class="final-head">
-        <div id="final-title" class="final-title"></div>
         <div class="final-hint">SPACE: SPEAK OR STOP   ESC: CLOSE   R: RESTART</div>
       </div>
 
-      <pre id="final-body" class="final-body"></pre>
+      <div class="final-content">
+        <section class="final-poem-wrap">
+          <div id="final-title" class="final-title"></div>
+          <pre id="final-body" class="final-body"></pre>
+        </section>
 
+        <aside class="leaderboard-panel">
+          <div class="leaderboard-head">
+            <div class="leaderboard-title">Poetry Commons</div>
+            <div id="leaderboard-status" class="leaderboard-status">Poetry Commons is live.</div>
+          </div>
+
+          <div class="leaderboard-compose">
+            <label class="leaderboard-label" for="poet-name">Your Name</label>
+            <input
+              id="poet-name"
+              class="leaderboard-input"
+              type="text"
+              maxlength="24"
+              placeholder="anonymous observer"
+            />
+
+            <div class="leaderboard-actions">
+              <button id="share-poem-btn" class="leaderboard-btn" type="button">
+                Share Your Poem
+              </button>
+              <button id="refresh-board-btn" class="leaderboard-btn ghost" type="button">
+                Refresh Poems
+              </button>
+            </div>
+          </div>
+
+          <div id="leaderboard-list" class="leaderboard-list">
+            <div class="leaderboard-empty">No poems have been shared here yet.</div>
+          </div>
+        </aside>
+      </div>
     </div>
   </div>
 
+  <iframe name="poem_submit_frame" style="display:none;"></iframe>
+  <form id="poem-submit-form" target="poem_submit_frame" method="POST" style="display:none;"></form>
+
   <script src="./lib/p5.min.js"></script>
   <script src="./lib/p5.sound.min.js"></script>
-  <script src="./sketch.js"></script>
+  <script src="./sketch_poetry_commons.js"></script>
 </body>
 </html>

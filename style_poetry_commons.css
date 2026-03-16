@@ -1,0 +1,623 @@
+:root{
+  --crt-bg:#001a00;
+  --crt-panel:rgba(0,18,0,.78);
+  --crt-panel-strong:rgba(0,18,0,.92);
+  --crt-border:#00ff66;
+  --crt-text:#33ff88;
+  --crt-text-soft:#a8ffd8;
+  --crt-dim:rgba(51,255,136,.72);
+  --alert-red:#ff2a2a;
+  --alert-red-soft:#ffb0b0;
+}
+
+/* =========================
+   BASE
+========================= */
+html,
+body{
+  margin:0;
+  padding:0;
+  height:100%;
+}
+
+body{
+  height:100%;
+  background:var(--crt-bg);
+  color:var(--crt-text);
+  font-family:'VT323', monospace;
+  overflow:hidden;
+  font-size:clamp(16px, 1.4vw, 20px);
+  line-height:1.35;
+  animation:crtFlicker 2.6s infinite;
+}
+
+/* =========================
+   GLOBAL TITLES + LABELS
+========================= */
+.panel-title{
+  font-size:38px;
+  color:var(--alert-red);
+  font-weight:bold;
+  letter-spacing:1px;
+  margin:0 0 6px 0;
+}
+
+.panel-sub{
+  margin-top:10px;
+  margin-bottom:6px;
+  font-size:20px;
+  letter-spacing:1px;
+  color:var(--alert-red);
+  font-weight:bold;
+}
+
+.control-label{
+  color:var(--alert-red);
+  letter-spacing:.5px;
+  font-weight:bold;
+}
+
+/* =========================
+   LAYOUT
+========================= */
+.hud-top{
+  height:100%;
+  box-sizing:border-box;
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) minmax(300px, 0.72fr);
+  grid-template-rows:auto minmax(0, 1fr) 180px;
+  grid-template-areas:
+    "prompt right"
+    "game right"
+    "poem poem";
+  gap:10px;
+  padding:8px 10px;
+  min-height:0;
+  overflow:hidden;
+}
+
+.prompt{ grid-area:prompt; }
+.rightpanels{ grid-area:right; }
+.game-frame{ grid-area:game; }
+.poem{ grid-area:poem; }
+
+/* =========================
+   ACT HEADER
+========================= */
+.prompt{
+  border:2px solid var(--alert-red);
+  background:rgba(20,0,0,.86);
+  box-shadow:0 0 12px rgba(255,42,42,.18);
+  padding:14px 18px;
+  margin:0;
+  box-sizing:border-box;
+
+  display:grid;
+  grid-template-columns:auto 1fr;
+  gap:22px;
+  align-items:start;
+}
+
+.prompt .act-left{
+  display:flex;
+  flex-direction:column;
+  justify-content:flex-start;
+  min-width:max-content;
+}
+
+.prompt .act-right{
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  justify-content:flex-start;
+  min-width:0;
+}
+
+.prompt .act-title{
+  font-size:52px;
+  font-weight:bold;
+  color:var(--alert-red);
+  letter-spacing:2px;
+  margin:0;
+  line-height:1;
+}
+
+.prompt .act-signal{
+  font-size:24px;
+  color:#ff8a8a;
+  opacity:1;
+  margin:4px 0 6px 0;
+}
+
+.prompt .act-sub{
+  font-size:24px;
+  color:#ffd4d4;
+  opacity:1;
+  line-height:1.25;
+}
+
+/* =========================
+   RIGHT PANELS
+========================= */
+.rightpanels{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  min-height:0;
+  overflow-y:auto;
+  overflow-x:hidden;
+  padding-right:4px;
+}
+
+.rightpanels::-webkit-scrollbar{
+  width:8px;
+}
+
+.rightpanels::-webkit-scrollbar-thumb{
+  background:rgba(0,255,102,.35);
+  border-radius:4px;
+}
+
+.rightpanels::-webkit-scrollbar-track{
+  background:rgba(0,0,0,.18);
+}
+
+.controls-box,
+.howto-box{
+  margin:0;
+  padding:10px 12px;
+  box-sizing:border-box;
+  background:var(--crt-panel);
+  border:2px solid var(--crt-border);
+  box-shadow:0 0 8px rgba(0,255,102,.22);
+  letter-spacing:.6px;
+  color:var(--crt-text);
+  flex:0 0 auto;
+  max-height:none;
+}
+
+.controls-box{ line-height:1.25; }
+.howto-box{ line-height:1.35; }
+
+.howto-p{
+  margin-top:8px;
+}
+
+/* =========================
+   GAME
+========================= */
+.game-frame{
+  height:100%;
+  width:100%;
+  display:block;
+  background:transparent;
+  border:1px solid var(--crt-border);
+  box-shadow:0 0 6px rgba(0,255,102,.35);
+  border-radius:4px;
+  overflow:hidden;
+  padding:0;
+}
+
+.game-frame canvas{
+  display:block;
+  width:100%;
+  height:100%;
+  touch-action:none;
+}
+
+/* =========================
+   POEM STRIP
+========================= */
+.poem{
+  margin:0;
+  padding:10px 12px 22px 12px;
+  box-sizing:border-box;
+  background:var(--crt-panel);
+  border:2px solid var(--crt-border);
+  box-shadow:0 0 8px rgba(0,255,102,.22);
+  height:180px;
+  overflow-y:auto;
+  display:flex;
+  flex-direction:column;
+  justify-content:flex-end;
+  white-space:pre-wrap;
+  min-height:0;
+}
+
+.poem span{
+  opacity:.55;
+  color:var(--crt-text);
+  display:block;
+  margin-bottom:4px;
+}
+
+.poem .typing-line{
+  opacity:1;
+  color:#66ffd1;
+  margin-top:2px;
+  animation:typingPulse 1.6s ease-in-out infinite alternate;
+}
+
+.poem .cursor{
+  display:inline;
+  margin-left:2px;
+  opacity:1;
+  color:#66ffd1;
+  text-shadow:
+    0 0 6px #00ffc8,
+    0 0 12px #00ffc8,
+    0 0 24px rgba(0,255,200,.8);
+  animation:cursorBlink 1s infinite;
+}
+
+.poem::-webkit-scrollbar{
+  width:0;
+  height:0;
+}
+
+/* =========================
+   FINAL MODAL
+========================= */
+.final-modal{
+  position:fixed;
+  inset:0;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  padding:16px;
+  z-index:12000;
+  background:rgba(0,0,0,.70);
+}
+
+.final-modal.is-open{
+  display:flex;
+}
+
+.final-panel{
+  width:min(1180px, 96vw);
+  max-height:90vh;
+  display:flex;
+  flex-direction:column;
+  background:rgba(0,8,0,.94);
+  border:2px solid var(--crt-border);
+  box-shadow:0 0 12px rgba(0,255,102,.24);
+}
+
+.final-head{
+  flex:0 0 auto;
+  padding:14px 22px 10px 22px;
+  border-bottom:1px solid rgba(0,255,102,.24);
+}
+
+.final-hint{
+  margin:0;
+  font-size:18px;
+  color:var(--crt-dim);
+}
+
+.final-content{
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) minmax(0, 1fr);
+  gap:16px;
+  min-height:0;
+  flex:1 1 auto;
+  overflow:hidden;
+  padding:16px;
+}
+
+.final-poem-wrap{
+  min-width:0;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  background:rgba(0,14,0,.92);
+  border:2px solid var(--crt-border);
+  box-shadow:0 0 8px rgba(0,255,102,.20);
+}
+
+.final-title{
+  font-size:34px;
+  color:#66ffd1;
+  letter-spacing:1px;
+  margin:0;
+  padding:18px 22px 8px 22px;
+  border-bottom:1px solid rgba(0,255,102,.18);
+}
+
+.final-body{
+  margin:0;
+  min-height:0;
+  height:100%;
+  overflow:auto;
+  white-space:pre-wrap;
+  -webkit-overflow-scrolling:touch;
+  font-size:24px;
+  line-height:1.65;
+  padding:18px 22px 22px 22px;
+  color:var(--crt-text-soft);
+}
+
+/* =========================
+   POETRY COMMONS
+========================= */
+.leaderboard-panel{
+  min-width:0;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  background:rgba(0,14,0,.92);
+  border:2px solid var(--crt-border);
+  box-shadow:0 0 8px rgba(0,255,102,.20);
+  padding:18px 22px 22px 22px;
+  gap:14px;
+}
+
+.leaderboard-head{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+
+.leaderboard-title{
+  font-size:34px;
+  color:var(--alert-red);
+  font-weight:bold;
+  letter-spacing:1px;
+}
+
+.leaderboard-status{
+  color:#9fffcf;
+  font-size:20px;
+}
+
+.leaderboard-compose{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+
+.leaderboard-label{
+  color:var(--crt-text);
+  font-size:20px;
+}
+
+.leaderboard-input{
+  width:100%;
+  box-sizing:border-box;
+  background:rgba(0,0,0,.45);
+  color:#c9ffe8;
+  border:2px solid var(--crt-border);
+  padding:12px 14px;
+  font:inherit;
+  outline:none;
+}
+
+.leaderboard-input:focus{
+  box-shadow:0 0 0 2px rgba(0,255,102,.25);
+}
+
+.leaderboard-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+}
+
+.leaderboard-btn{
+  background:rgba(0,255,102,.12);
+  color:var(--crt-text);
+  border:1px solid var(--crt-border);
+  padding:9px 14px;
+  font:inherit;
+  cursor:pointer;
+}
+
+.leaderboard-btn.ghost{
+  background:transparent;
+}
+
+.leaderboard-btn:disabled{
+  opacity:.55;
+  cursor:default;
+}
+
+.leaderboard-list{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  flex:1 1 auto;
+  min-height:0;
+  overflow:auto;
+}
+
+.leaderboard-entry{
+  border:1px solid rgba(0,255,102,.35);
+  background:rgba(0,0,0,.22);
+  padding:14px;
+}
+
+.leaderboard-meta{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom:6px;
+}
+
+.leaderboard-name,
+.leaderboard-poem-title{
+  color:var(--crt-text);
+}
+
+.leaderboard-date{
+  color:var(--crt-dim);
+}
+
+.leaderboard-poem-title{
+  color:#66ffd1;
+  margin-bottom:6px;
+}
+
+.leaderboard-poem-text,
+.leaderboard-empty{
+  white-space:pre-wrap;
+  color:var(--crt-text);
+}
+
+/* =========================
+   CRT OVERLAY
+========================= */
+body::before{
+  content:"";
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  z-index:9999;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      rgba(0,0,0,0) 0px,
+      rgba(0,0,0,0) 2px,
+      rgba(0,0,0,.18) 3px
+    );
+  mix-blend-mode:multiply;
+  opacity:.55;
+}
+
+body::after{
+  content:"";
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  z-index:10000;
+  background:radial-gradient(
+    ellipse at center,
+    rgba(0,0,0,0) 0%,
+    rgba(0,0,0,.15) 60%,
+    rgba(0,0,0,.35) 100%
+  );
+  opacity:.55;
+}
+
+/* =========================
+   ANIMATIONS
+========================= */
+@keyframes typingPulse{
+  0%{
+    filter:brightness(1);
+    text-shadow:
+      0 0 3px #00ffc8,
+      0 0 8px #00ffc8,
+      0 0 14px rgba(0,255,200,.65),
+      0 0 24px rgba(0,255,200,.35);
+  }
+  100%{
+    filter:brightness(1.12);
+    text-shadow:
+      0 0 5px #00ffc8,
+      0 0 12px #00ffc8,
+      0 0 22px rgba(0,255,200,.85),
+      0 0 36px rgba(0,255,200,.55);
+  }
+}
+
+@keyframes cursorBlink{
+  0%,50%,100%{ opacity:1; }
+  25%,75%{ opacity:.2; }
+}
+
+@keyframes crtFlicker{
+  0%{ opacity:1; }
+  50%{ opacity:.96; }
+  100%{ opacity:1; }
+}
+
+/* =========================
+   MOBILE
+========================= */
+@media (max-width: 820px){
+  body{
+    overflow:auto;
+  }
+
+  .hud-top{
+    height:auto;
+    grid-template-columns:1fr;
+    grid-template-rows:auto auto auto auto;
+    grid-template-areas:
+      "prompt"
+      "right"
+      "game"
+      "poem";
+  }
+
+  .rightpanels{
+    height:auto;
+  }
+
+  .prompt{
+    grid-template-columns:1fr;
+    padding:12px 14px;
+  }
+
+  .prompt .act-right{
+    text-align:left;
+    white-space:normal;
+  }
+
+  .prompt .act-title{
+    font-size:38px;
+  }
+
+  .prompt .act-signal,
+  .prompt .act-sub{
+    font-size:20px;
+  }
+
+  .panel-title{
+    font-size:26px;
+  }
+
+  .game-frame{
+    height:min(65vh, 520px);
+  }
+
+  .poem{
+    max-height:190px;
+    overflow:auto;
+    padding-bottom:28px;
+  }
+
+  .final-content{
+    grid-template-columns:1fr;
+    grid-template-rows:auto auto;
+  }
+
+  .final-title{
+    font-size:28px;
+    padding:14px 16px 6px 16px;
+  }
+
+  .final-body{
+    font-size:20px;
+    line-height:1.55;
+    padding:14px 16px 18px 16px;
+    max-height:38vh;
+  }
+
+  .leaderboard-panel{
+    padding:16px 18px 20px 18px;
+  }
+
+  .leaderboard-title{
+    font-size:28px;
+  }
+
+  .leaderboard-status,
+  .leaderboard-label{
+    font-size:18px;
+  }
+
+  .leaderboard-list{
+    max-height:30vh;
+  }
+}
