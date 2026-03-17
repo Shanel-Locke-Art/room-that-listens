@@ -463,6 +463,17 @@ body{
   color:var(--crt-text);
 }
 
+.final-content-single{
+  grid-template-columns:minmax(0, 1fr);
+}
+
+.final-hint{
+  font-size:18px;
+  color:rgba(51,255,136,.7);
+  letter-spacing:.5px;
+  text-align:center;
+}
+
 /* =========================
    CRT OVERLAY
 ========================= */

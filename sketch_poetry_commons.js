@@ -52,6 +52,9 @@ let leaderboardListEl = null;
 let poetNameInputEl = null;
 let sharePoemBtnEl = null;
 let refreshBoardBtnEl = null;
+let actPoemModalEl = null;
+let actPoemTitleEl = null;
+let actPoemBodyEl = null;
 
 /* =========================
    WORLD / CAMERA / PLAYER
@@ -451,13 +454,44 @@ function openActPoemModal(title, text) {
   actPoemText = text;
   showActPoemModal = true;
   paused = true;
+
+  if (actPoemTitleEl) {
+    actPoemTitleEl.textContent = actPoemTitle;
+  }
+
+  if (actPoemBodyEl) {
+    actPoemBodyEl.innerText = actPoemText;
+    actPoemBodyEl.scrollTop = 0;
+  }
+
+  if (actPoemModalEl) {
+    actPoemModalEl.classList.add("is-open");
+    actPoemModalEl.setAttribute("aria-hidden", "false");
+  }
 }
 
-function closeActPoemModal() {
-  showActPoemModal = false;
-  paused = false;
-  if (cnv && cnv.elt) cnv.elt.focus();
-}
+  function sfxPageTurn() {
+    if (!audioArmed) return;
+
+    // soft paper-like flick + tiny tail
+    sfxBlip(740, 0.001, 0.03, 0.06);
+    setTimeout(() => sfxBlip(520, 0.001, 0.025, 0.05), 22);
+    setTimeout(() => sfxBlip(320, 0.001, 0.035, 0.04), 48);
+  }
+
+  function closeActPoemModal() {
+    sfxPageTurn();
+
+    showActPoemModal = false;
+    paused = false;
+
+    if (actPoemModalEl) {
+      actPoemModalEl.classList.remove("is-open");
+      actPoemModalEl.setAttribute("aria-hidden", "true");
+    }
+
+    if (cnv && cnv.elt) cnv.elt.focus();
+  }
 
 /* =========================
    HIDDEN FOCUS CACHE
@@ -609,6 +643,9 @@ function setup() {
   poetNameInputEl = document.getElementById("poet-name");
   sharePoemBtnEl = document.getElementById("share-poem-btn");
   refreshBoardBtnEl = document.getElementById("refresh-board-btn");
+  actPoemModalEl = document.getElementById("act-poem-modal");
+  actPoemTitleEl = document.getElementById("act-poem-title");
+  actPoemBodyEl = document.getElementById("act-poem-body");
 
   bindLeaderboardUI();
   hydratePoetName();
@@ -980,10 +1017,6 @@ function draw() {
 
   if (mode === "world") drawWorldMode();
   else drawFocusMode();
-
-  if (showActPoemModal) {
-    drawActPoemModal();
-  }
 
   updateUI();
 }
@@ -2051,17 +2084,32 @@ function keyPressed() {
      ae.tagName === "TEXTAREA" ||
      ae.isContentEditable);
 
+  /* -------------------------
+     FINAL POEM MODAL
+  ------------------------- */
   if (showFinalModal) {
     if (keyCode === ESCAPE) {
       closeFinalModal();
       return false;
     }
 
-    if (keyCode === 32) {
+    if (key === "r" || key === "R") {
+      closeFinalModal();
+      resetRun();
+      return false;
+    }
+
+    if (key === "t" || key === "T") {
+      debugOpenFinalPoem();
+      return false;
+    }
+
+    if (key === " " || keyCode === 32) {
       toggleFinalSpeech();
       return false;
     }
 
+    // Let typing work in the name box
     if (isTypingField) {
       return true;
     }
@@ -2069,14 +2117,33 @@ function keyPressed() {
     return false;
   }
 
+  /* -------------------------
+     ACT / STANZA MODAL
+  ------------------------- */
   if (showActPoemModal) {
-    if (keyCode === ESCAPE || keyCode === 32 || key === "e" || key === "E") {
+    if (keyCode === ESCAPE || key === "e" || key === "E" || key === " " || keyCode === 32) {
       closeActPoemModal();
       return false;
     }
+
+    if (key === "r" || key === "R") {
+      closeActPoemModal();
+      resetRun();
+      return false;
+    }
+
+    if (key === "t" || key === "T") {
+      closeActPoemModal();
+      debugOpenFinalPoem();
+      return false;
+    }
+
     return false;
   }
 
+  /* -------------------------
+     NORMAL GAME INPUT
+  ------------------------- */
   if (keyCode === ESCAPE) {
     paused = !paused;
     return false;
@@ -2329,16 +2396,18 @@ function saveLocalPoetryEntries(entries) {
 }
 
 function normalizePoetryRows(rows) {
-  return rows
+  return (rows || [])
     .map(row => ({
       name: String(row.name || "anonymous observer").slice(0, 24),
       title: String(row.title || "UNTITLED POEM").slice(0, 80),
-      text: String(row.text || row.poem || "").slice(0, LEADERBOARD_CONFIG.maxPoemChars),
-      score: Number(row.score || 0),
+      text: String(row.text || "").slice(0, LEADERBOARD_CONFIG.maxPoemChars),
       createdAt: row.createdAt || row.timestamp || ""
     }))
-    .sort((a, b) => (b.score - a.score) || String(b.createdAt).localeCompare(String(a.createdAt)))
-    .slice(0, LEADERBOARD_CONFIG.maxEntries);
+    .sort((a, b) => {
+      const da = new Date(a.createdAt || 0);
+      const db = new Date(b.createdAt || 0);
+      return db - da;
+    });
 }
 
 function buildLeaderboardPayload() {
