@@ -233,21 +233,33 @@ body{
 
 .poem .typing-line{
   opacity:1;
-  color:#66ffd1;
+  color:#9affdc;
   margin-top:2px;
+  text-shadow:0 0 8px rgba(102,255,209,.35);
   animation:typingPulse 1.6s ease-in-out infinite alternate;
 }
 
 .poem .cursor{
-  display:inline;
-  margin-left:2px;
+  display:inline-block;
+  margin-left:4px;
   opacity:1;
-  color:#66ffd1;
+  color:#b8ffe8;
   text-shadow:
-    0 0 6px #00ffc8,
-    0 0 12px #00ffc8,
-    0 0 24px rgba(0,255,200,.8);
-  animation:cursorBlink 1s infinite;
+    0 0 4px #66ffd1,
+    0 0 10px #00ffc8,
+    0 0 18px #00ffc8;
+  animation:readyCursorBlink 0.9s steps(1) infinite;
+  transform:translateY(1px);
+  font-size:1.05em;
+}
+
+@keyframes readyCursorBlink{
+  0%, 45%{
+    opacity:1;
+  }
+  46%, 100%{
+    opacity:.18;
+  }
 }
 
 .poem::-webkit-scrollbar{
@@ -474,6 +486,23 @@ body{
   text-align:center;
 }
 
+.final-modal.commons-only .final-poem-wrap{
+  display:none;
+}
+
+.final-modal.commons-only .leaderboard-panel{
+  width:100%;
+  max-width:none;
+  flex:1 1 auto;
+}
+
+.final-modal.commons-only .final-content{
+  display:flex;
+}
+
+.final-modal.commons-only .leaderboard-list{
+  min-height:420px;
+}
 /* =========================
    CRT OVERLAY
 ========================= */

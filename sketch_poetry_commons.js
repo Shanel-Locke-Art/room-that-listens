@@ -55,6 +55,7 @@ let refreshBoardBtnEl = null;
 let actPoemModalEl = null;
 let actPoemTitleEl = null;
 let actPoemBodyEl = null;
+let controlsContentEl = null;
 
 /* =========================
    WORLD / CAMERA / PLAYER
@@ -118,7 +119,7 @@ let stations = [];
 /* =========================
    MODES
 ========================= */
-let mode = "world";        // world | focus
+let mode = "boot";         // boot | menu | world | focus | credits
 let paused = false;
 let showFinalModal = false;
 
@@ -126,6 +127,39 @@ let focusId = null;
 let focusImg = null;
 let focusZoom = 1.35;
 let focusZoomTarget = 1.35;
+
+/* =========================
+   MENU / LORE
+========================= */
+const MENU_OPTIONS = [
+  "BEGIN WRITING",
+  "POETRY COMMONS",
+  "CREDITS"
+];
+
+let menuIndex = 0;
+let bootStartedAt = 0;
+let bootDurationMs = 3200;
+let menuLoreIndex = 0;
+let menuLoreChangedAt = 0;
+let menuLoreEveryMs = 3600;
+let entryPromptVisible = false;
+
+const MENU_LORE = [
+  "The system does not generate poems. It remembers what you notice.",
+  "A room is a container. A poem is what leaks out.",
+  "You are not the author. You are the interruption.",
+  "The machine cannot begin until you choose to be seen.",
+  "Every object is a language waiting for a witness.",
+  "The room is small. The consequences are not."
+];
+
+const BOOT_LINES = [
+  "INITIALIZING OBSERVER...",
+  "CALIBRATING ROOM TONE...",
+  "UNSEALING COMMONS MEMORY...",
+  "CHECKING FOR A HUMAN INTERRUPTION..."
+];
 
 /* =========================
    ACTS
@@ -584,6 +618,16 @@ function stopTTS() {
     if (leaderboardStatusEl) {
       leaderboardStatusEl.textContent = "Poetry Commons is live.";
     }
+
+    setTimeout(() => {
+      if (finalPoemTitle === "POETRY COMMONS") {
+        if (cnv && cnv.elt) cnv.elt.focus();
+      } else if (poetNameInputEl && poetNameInputEl.style.display !== "none" && !poetNameInputEl.disabled) {
+        poetNameInputEl.focus();
+      } else if (cnv && cnv.elt) {
+        cnv.elt.focus();
+      }
+    }, 0);
   }
 }
 
@@ -614,6 +658,65 @@ function toggleFinalSpeech() {
     speakText(text);
   }
 }
+
+function speakPoetryCommons() {
+  if (speaking) {
+    stopTTS();
+    return;
+  }
+
+  const entries = Array.from(document.querySelectorAll("#leaderboard-list .leaderboard-entry"));
+
+  if (!entries.length) {
+    speakText("Poetry Commons is empty right now.");
+    return;
+  }
+
+  const text = entries
+    .slice(0, 8)
+    .map((entryEl, index) => {
+      const title = (entryEl.querySelector(".leaderboard-poem-title")?.textContent || "Untitled Poem").trim();
+      const name = (entryEl.querySelector(".leaderboard-name")?.textContent || "anonymous observer").trim();
+      const body = (entryEl.querySelector(".leaderboard-poem-text")?.textContent || "")
+        .trim()
+        .replace(/\s+\./g, ".")
+        .replace(/\s+,/g, ",")
+        .replace(/\n+/g, "... ")
+        .replace(/\.{4,}/g, "...");
+
+      return `Poem ${index + 1}. ${title}. By ${name}. ${body}`;
+    })
+    .join(" ... ");
+
+  if (text.length > 0) {
+    speakText(text);
+  }
+}
+
+let creditsIndex = 0;
+let creditsCharIndex = 0;
+let creditsTimer = 0;
+
+let creditsLines = [
+  "This system was trained on noticing.",
+  "",
+  "Primary Observer: L0g1cF@11acy",
+  "Secondary Observer: The Machine",
+  "",
+  "Built using p5.js",
+  "An open source library for creative coding",
+  "",
+  "You are the author.",
+  "The computer assists.",
+  "",
+  "All poems are co-authored.",
+  "No poem is owned.",
+  "",
+  "Some patterns were found.",
+  "Some were made.",
+  "",
+  "You were here."
+];
 
 /* =========================
    SPRITES (procedural)
@@ -646,6 +749,7 @@ function setup() {
   actPoemModalEl = document.getElementById("act-poem-modal");
   actPoemTitleEl = document.getElementById("act-poem-title");
   actPoemBodyEl = document.getElementById("act-poem-body");
+  controlsContentEl = document.getElementById("controls-content");
 
   bindLeaderboardUI();
   hydratePoetName();
@@ -660,23 +764,38 @@ function setup() {
   pixelDensity(window.devicePixelRatio || 1);
   noSmooth();
 
-  // Make canvas focusable
-  cnv.elt.setAttribute("tabindex", "0");
-  cnv.elt.style.outline = "none";
-  cnv.elt.focus();
+    // Make canvas focusable
+    cnv.elt.setAttribute("tabindex", "0");
+    cnv.elt.style.outline = "none";
+    cnv.elt.focus();
+
+    textFont("VT323");
 
   // ESC closes modal even if focus shifts
   window.addEventListener("keydown", (e) => {
-    if (showFinalModal && e.key === "Escape") {
+    if (!showFinalModal) return;
+
+    if (e.key === "Escape") {
       e.preventDefault();
-      closeFinalModal();
+      e.stopPropagation();
+      closeFinalModal(finalPoemTitle === "POETRY COMMONS");
+      return;
+    }
+
+    if ((e.key === " " || e.code === "Space") && finalPoemTitle === "POETRY COMMONS") {
+      e.preventDefault();
+      e.stopPropagation();
+      speakPoetryCommons();
+      return;
     }
   });
 
   createBuffersAndShaders();
 
   runSeed = (Date.now() ^ (Math.random() * 1e9)) >>> 0;
-  resetRun();
+  bootStartedAt = millis();
+  menuLoreChangedAt = millis();
+  resetRun(true);
 }
 
 function windowResized() {
@@ -913,7 +1032,7 @@ function startAct3() {
 /* ==========================================================
    RESET RUN
 ========================================================== */
-function resetRun() {
+function resetRun(startInMenu = false) {
   stopTTS();
 
   paused = false;
@@ -924,7 +1043,7 @@ function resetRun() {
   actPoemTitle = "";
   actPoemText = "";
 
-  mode = "world";
+  mode = startInMenu ? "menu" : "world";
   focusId = null;
   focusImg = null;
   focusZoom = 1.35;
@@ -954,20 +1073,18 @@ function resetRun() {
   pulse.hit = false;
   pulse.speed = 18;
 
-  
+  menuIndex = 0;
+  entryPromptVisible = false;
 
-  // Randomize world dimensions
   world.w = Math.floor(2400 + random(0, 1400));
   world.h = Math.floor(1700 + random(0, 1000));
   world.pad = Math.floor(170 + random(0, 130));
 
-  // Start player center
   player.x = world.w * 0.5;
   player.y = world.h * 0.5;
   camera.x = player.x;
   camera.y = player.y;
 
-  // Fractal baseline
   fractal.baseCenter.x = -0.6;
   fractal.baseCenter.y = 0.0;
   fractal.baseZoom = 2.2;
@@ -979,17 +1096,305 @@ function resetRun() {
   fractal.zoom = fractal.baseZoom;
   fractal.warp = fractal.baseWarp;
 
-  // Stations
   generateStations();
 
-  // Instructions
-  queuePoemLine("A room shimmers in green phosphor.");
-  queuePoemLine("You and the machine co-write a poem by moving through it.");
-  queuePoemLine("Interact with 2 objects, then the door. The order becomes the poem.");
-  queuePoemLine("Hidden SIG nodes are withheld words. Find them to deepen SIGNAL.");
-  queuePoemLine("Controls: WASD or arrows move. E interact. Q ping door. ESC close. R restart.");
+  if (!startInMenu) {
+    queuePoemLine("A room shimmers in green phosphor.");
+    queuePoemLine("You and the machine co-write a poem by moving through it.");
+    queuePoemLine("Interact with 2 objects, then the door. The order becomes the poem.");
+    queuePoemLine("Hidden SIG nodes are withheld words. Find them to deepen SIGNAL.");
+    queuePoemLine("Controls: WASD or arrows move. E interact. Q ping door. ESC close. R restart.");
+  }
 
   if (cnv && cnv.elt) cnv.elt.focus();
+}
+
+function beginWritingFromMenu() {
+  resetRun(false);
+  queuePoemLine("The room is not ready.");
+  queuePoemLine("It is building itself from what you expect.");
+  queuePoemLine("Step inside. Notice something before it notices you back.");
+  entryPromptVisible = true;
+}
+
+function setCommonsReadOnly(isReadOnly) {
+  if (poetNameInputEl) {
+    poetNameInputEl.style.display = isReadOnly ? "none" : "";
+    if (isReadOnly) poetNameInputEl.value = "";
+  }
+
+  if (sharePoemBtnEl) {
+    sharePoemBtnEl.style.display = isReadOnly ? "none" : "";
+  }
+
+  const poetNameLabel = document.querySelector('label[for="poet-name"]');
+  if (poetNameLabel) {
+    poetNameLabel.style.display = isReadOnly ? "none" : "";
+  }
+
+  if (refreshBoardBtnEl) {
+    refreshBoardBtnEl.style.display = isReadOnly ? "none" : "";
+  }
+}
+
+function openPoetryCommonsFromMenu() {
+  if (!finalTitleEl || !finalBodyEl) return;
+
+  stopTTS();
+
+  finalPoemTitle = "POETRY COMMONS";
+  finalPoemText = "";
+
+  if (finalTitleEl) finalTitleEl.textContent = finalPoemTitle;
+
+  if (finalBodyEl) {
+    finalBodyEl.innerText = "";
+    finalBodyEl.scrollTop = 0;
+  }
+
+  showFinalModal = true;
+  paused = true;
+
+  if (finalModalEl) {
+    finalModalEl.classList.add("is-open");
+    finalModalEl.setAttribute("aria-hidden", "false");
+    finalModalEl.classList.add("commons-only");
+  }
+
+  setCommonsReadOnly(true);
+  setPoetryCommonsEnabled(true);
+
+  renderLeaderboard();
+  refreshLeaderboard();
+
+  setTimeout(() => {
+    if (cnv && cnv.elt) cnv.elt.focus();
+  }, 0);
+}
+
+function drawBootScreen() {
+  drawCRTBackground();
+
+  const elapsed = millis() - bootStartedAt;
+  const progress = constrain(elapsed / bootDurationMs, 0, 1);
+  const lineIndex = Math.min(BOOT_LINES.length - 1, Math.floor(progress * BOOT_LINES.length));
+
+  push();
+  textFont("VT323");
+  textStyle(NORMAL);
+  textAlign(LEFT, TOP);
+  fill(255, 70, 70);
+  textSize(30 * S);
+  text("THE POEM ROOM", 48 * S, 56 * S);
+
+  fill(170, 255, 210);
+  textSize(20 * S);
+
+  for (let i = 0; i <= lineIndex; i++) {
+    text(BOOT_LINES[i], 48 * S, (120 + i * 34) * S);
+  }
+
+  noFill();
+  stroke(0, 255, 120, 170);
+  rect(48 * S, CH - 82 * S, CW - 96 * S, 18 * S);
+
+  noStroke();
+  fill(255, 60, 60, 220);
+  rect(48 * S, CH - 82 * S, (CW - 96 * S) * progress, 18 * S);
+
+  pop();
+
+  if (elapsed >= bootDurationMs) {
+    mode = "menu";
+    menuLoreChangedAt = millis();
+  }
+}
+
+function drawMenuScreen() {
+  drawCRTBackground();
+
+  if (fractalLayer) {
+    tint(120, 255, 170, 120);
+    image(fractalLayer, 0, 0);
+    noTint();
+  }
+
+  if (millis() - menuLoreChangedAt > menuLoreEveryMs) {
+    menuLoreIndex = (menuLoreIndex + 1) % MENU_LORE.length;
+    menuLoreChangedAt = millis();
+  }
+
+  push();
+
+  textFont("VT323");
+  textStyle(NORMAL);
+
+ textAlign(CENTER, CENTER);
+
+  // Center anchor point
+  const centerX = CW * 0.5;
+  const centerY = CH * 0.28;   // tweak this if you want higher/lower
+
+  // TITLE
+  fill(255, 60, 60);
+  textSize(48 * S);
+  text("THE POEM ROOM", centerX, centerY);
+
+  // SUBTITLE (perfectly spaced under it)
+  fill(255, 150, 150);
+  textSize(20 * S);
+  text("you are not the author alone", centerX, centerY + 36 * S);
+
+  textAlign(LEFT, CENTER);
+  textSize(26 * S);
+
+  const startX = CW * 0.5 - 130 * S;
+  const startY = CH * 0.5 - 20 * S;
+
+  for (let i = 0; i < MENU_OPTIONS.length; i++) {
+  const isSelected = i === menuIndex;
+
+  // base color
+  fill(isSelected ? color(120, 255, 170) : color(120, 255, 170, 120));
+
+  let label = (isSelected ? "> " : "  ") + MENU_OPTIONS[i];
+
+  // glowing green cursor
+  if (isSelected && frameCount % 60 < 30) {
+    push();
+
+    // draw text without cursor first
+    text(label, startX, startY + i * 42 * S);
+
+    // measure text width so we can place cursor right after it
+    const w = textWidth(label);
+
+    // glowing green cursor
+    fill(120, 255, 170);
+    drawingContext.shadowBlur = 12;
+    drawingContext.shadowColor = "rgba(0,255,200,0.8)";
+
+    text("█", startX + w + 6 * S, startY + i * 42 * S);
+
+    drawingContext.shadowBlur = 0;
+    pop();
+
+    continue;
+  }
+
+  text(label, startX, startY + i * 42 * S);
+}
+
+    const loreW = CW * 0.72;
+    const loreH = 70 * S;
+    const loreX = (CW - loreW) / 2;
+    const loreY = CH - 140 * S;
+
+    fill(170, 255, 210);
+    textSize(16 * S);
+    textAlign(CENTER, TOP);
+    text(MENU_LORE[menuLoreIndex], loreX, loreY, loreW, loreH);
+
+    pop();
+}
+
+function drawCreditsScreen() {
+  drawCRTBackground();
+
+  if (fractalLayer) {
+    tint(120, 255, 170, 45);
+    image(fractalLayer, 0, 0);
+    noTint();
+  }
+
+  push();
+  textFont("VT323");
+  textAlign(CENTER, TOP);
+  textSize(18 * S);
+
+  const startY = 72 * S;
+  const lineHeight = 24 * S;
+  let y = startY;
+
+  for (let i = 0; i <= creditsIndex && i < creditsLines.length; i++) {
+    const line = creditsLines[i];
+
+    let visibleText = line;
+    if (i === creditsIndex) {
+      visibleText = line.substring(0, creditsCharIndex);
+    }
+
+    let col = color(120, 255, 190);
+    drawingContext.shadowBlur = 0;
+    drawingContext.shadowColor = "transparent";
+
+    if (line.includes("L0g1cF@11acy")) {
+      col = color(255, 120, 120);
+      drawingContext.shadowBlur = 4;
+      drawingContext.shadowColor = "rgba(255,120,120,0.35)";
+    } else if (line.includes("You are the author")) {
+      col = color(180, 255, 220);
+      drawingContext.shadowBlur = 5;
+      drawingContext.shadowColor = "rgba(120,255,200,0.35)";
+    }
+
+    fill(col);
+    text(visibleText, CW * 0.5, y);
+
+    drawingContext.shadowBlur = 0;
+    drawingContext.shadowColor = "transparent";
+
+    y += lineHeight;
+  }
+
+  pop();
+
+  updateCreditsTypewriter();
+}
+
+function handleMenuSelection() {
+  const choice = MENU_OPTIONS[menuIndex];
+
+  if (choice === "BEGIN WRITING") {
+    beginWritingFromMenu();
+    return;
+  }
+
+  if (choice === "POETRY COMMONS") {
+    openPoetryCommonsFromMenu();
+    return;
+  }
+
+  if (choice === "CREDITS") {
+    creditsIndex = 0;
+    creditsCharIndex = 0;
+    creditsTimer = millis();
+    mode = "credits";
+    return;
+  }
+}
+
+function updateCreditsTypewriter() {
+  if (creditsIndex >= creditsLines.length) return;
+
+  const now = millis();
+  let delay = 18;
+
+  const currentLine = creditsLines[creditsIndex];
+
+  if (currentLine.includes("You are the author")) delay = 40;
+  if (currentLine.includes("L0g1cF@11acy")) delay = 28;
+
+  if (now - creditsTimer > delay) {
+    creditsCharIndex++;
+    creditsTimer = now;
+
+    if (creditsCharIndex > creditsLines[creditsIndex].length) {
+      creditsCharIndex = 0;
+      creditsIndex++;
+      creditsTimer = now + 250;
+    }
+  }
 }
 
 /* ==========================================================
@@ -998,6 +1403,31 @@ function resetRun() {
 function draw() {
   updateTypewriter();
   rebuildPoemDisplay();
+
+  if (mode === "boot") {
+    updateProceduralMusic();
+    drawBootScreen();
+    updateUI();
+    return;
+  }
+
+  if (mode === "menu") {
+    updateProceduralMusic();
+    updateFractalAnimation();
+    if (mandelShader && fractalLayer) renderFractalLayer();
+    drawMenuScreen();
+    updateUI();
+    return;
+  }
+
+  if (mode === "credits") {
+    updateProceduralMusic();
+    updateFractalAnimation();
+    if (mandelShader && fractalLayer) renderFractalLayer();
+    drawCreditsScreen();
+    updateUI();
+    return;
+  }
 
   updatePulse();
   updateProceduralMusic();
@@ -1038,11 +1468,13 @@ function openFinalModal() {
     finalBodyEl.scrollTop = 0;
   }
 
-  if (finalModalEl) {
+    if (finalModalEl) {
     finalModalEl.classList.add("is-open");
+    finalModalEl.classList.remove("commons-only");
     finalModalEl.setAttribute("aria-hidden", "false");
   }
 
+  setCommonsReadOnly(false);
   setPoetryCommonsEnabled(false);
   renderLeaderboard();
   refreshLeaderboard();
@@ -1056,11 +1488,11 @@ function openFinalModal() {
   }
 }
 
-function closeFinalModal() {
+function closeFinalModal(returnToMenu = false) {
   stopTTS();
   showFinalModal = false;
   paused = false;
-  mode = "world";
+  mode = returnToMenu ? "menu" : "world";
   focusId = null;
   focusImg = null;
   focusZoom = 1.35;
@@ -1068,6 +1500,7 @@ function closeFinalModal() {
 
   if (finalModalEl) {
     finalModalEl.classList.remove("is-open");
+    finalModalEl.classList.remove("commons-only");
     finalModalEl.setAttribute("aria-hidden", "true");
   }
 
@@ -2076,6 +2509,9 @@ function tryInteract() {
   return false;
 }
 
+  /* -------------------------
+     FINAL POEM MODAL
+  ------------------------- */
 function keyPressed() {
   const ae = document.activeElement;
   const isTypingField =
@@ -2084,18 +2520,49 @@ function keyPressed() {
      ae.tagName === "TEXTAREA" ||
      ae.isContentEditable);
 
+  if (mode === "boot") {
+    return false;
+  }
+
+  if (mode === "menu") {
+    if (keyCode === UP_ARROW || key === "w" || key === "W") {
+      menuIndex = (menuIndex - 1 + MENU_OPTIONS.length) % MENU_OPTIONS.length;
+      return false;
+    }
+
+    if (keyCode === DOWN_ARROW || key === "s" || key === "S") {
+      menuIndex = (menuIndex + 1) % MENU_OPTIONS.length;
+      return false;
+    }
+
+    if (keyCode === ENTER || key === " " || keyCode === 32) {
+      handleMenuSelection();
+      return false;
+    }
+
+    return false;
+  }
+
+  if (mode === "credits") {
+    if (keyCode === ESCAPE || key === "e" || key === "E" || key === " " || keyCode === 32) {
+      mode = "menu";
+      return false;
+    }
+    return false;
+  }
+
   /* -------------------------
      FINAL POEM MODAL
   ------------------------- */
   if (showFinalModal) {
     if (keyCode === ESCAPE) {
-      closeFinalModal();
+      closeFinalModal(finalPoemTitle === "POETRY COMMONS");
       return false;
     }
 
     if (key === "r" || key === "R") {
-      closeFinalModal();
-      resetRun();
+      closeFinalModal(false);
+      resetRun(true);
       return false;
     }
 
@@ -2105,11 +2572,14 @@ function keyPressed() {
     }
 
     if (key === " " || keyCode === 32) {
-      toggleFinalSpeech();
+      if (finalPoemTitle === "POETRY COMMONS") {
+        speakPoetryCommons();
+      } else {
+        toggleFinalSpeech();
+      }
       return false;
     }
 
-    // Let typing work in the name box
     if (isTypingField) {
       return true;
     }
@@ -2128,7 +2598,7 @@ function keyPressed() {
 
     if (key === "r" || key === "R") {
       closeActPoemModal();
-      resetRun();
+      resetRun(true);
       return false;
     }
 
@@ -2150,7 +2620,7 @@ function keyPressed() {
   }
 
   if (key === "r" || key === "R") {
-    resetRun();
+    resetRun(true);
     return false;
   }
 
@@ -2296,16 +2766,35 @@ function touchEnded() {
 
 function restartRun() {
   runSeed = (Date.now() ^ (Math.random() * 1e9)) >>> 0;
-  resetRun();
+  resetRun(true);
 }
 
 function bindLeaderboardUI() {
-  if (sharePoemBtnEl) sharePoemBtnEl.addEventListener("click", submitCurrentPoemToLeaderboard);
-  if (refreshBoardBtnEl) refreshBoardBtnEl.addEventListener("click", refreshLeaderboard);
+  if (sharePoemBtnEl) {
+    sharePoemBtnEl.addEventListener("click", submitCurrentPoemToLeaderboard);
+  }
+
+  if (refreshBoardBtnEl) {
+    refreshBoardBtnEl.addEventListener("click", refreshLeaderboard);
+
+    refreshBoardBtnEl.addEventListener("keydown", (e) => {
+      if (
+        showFinalModal &&
+        finalPoemTitle === "POETRY COMMONS" &&
+        (e.key === " " || e.code === "Space")
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        speakPoetryCommons();
+      }
+    });
+  }
+
   if (poetNameInputEl) {
     poetNameInputEl.addEventListener("change", persistPoetName);
     poetNameInputEl.addEventListener("input", persistPoetName);
     poetNameInputEl.addEventListener("blur", persistPoetName);
+
     ["keydown", "keyup", "keypress", "click", "mousedown", "pointerdown", "touchstart"].forEach(type => {
       poetNameInputEl.addEventListener(type, (e) => e.stopPropagation());
     });
@@ -2958,6 +3447,52 @@ function updateTypewriter() {
 function rebuildPoemDisplay() {
   if (!poemEl || !promptEl) return;
 
+  const esc = (s) => String(s)
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;");
+
+  if (mode === "boot") {
+    promptEl.innerHTML = [
+      `<div class="act-title">INITIALIZING</div>`,
+      `<div class="act-sub">Preparing the room for an observer.</div>`,
+      `<div class="act-signal">Please wait.</div>`
+    ].join("");
+
+    poemEl.innerHTML = `<span class="typing-line">${esc("Booting poetic interface")}<span class="cursor">█</span></span>`;
+    return;
+  }
+
+  if (mode === "menu") {
+    promptEl.innerHTML = [
+      `<div class="act-left">`,
+        `<div class="act-title">MAIN MENU</div>`,
+      `</div>`,
+      `<div class="act-right">`,
+        `<div class="act-signal">${esc(MENU_LORE[menuLoreIndex])}</div>`,
+        `<div class="act-sub">Choose how you want to enter the system.</div>`,
+      `</div>`
+    ].join("");
+
+    poemEl.innerHTML = ``;
+    return;
+  }
+
+  if (mode === "credits") {
+    promptEl.innerHTML = [
+      `<div class="act-left">`,
+        `<div class="act-title">CREDITS</div>`,
+      `</div>`,
+      `<div class="act-right">`,
+        `<div class="act-signal">A record of observers, systems, and leaks.</div>`,
+        `<div class="act-sub">ESC returns to the menu.</div>`,
+      `</div>`
+    ].join("");
+
+    poemEl.innerHTML = ``;
+    return;
+  }
+
   const rand = mulberry32(runSeed);
   const titleA = pickFrom(["A ROOM", "A PATTERN", "A SMALL LOOP", "A SOFT MACHINE"], rand);
   const titleB = pickFrom(["LISTENS", "SHIMMERS", "REPEATS", "FORGETS", "LEAKS"], rand);
@@ -2978,22 +3513,15 @@ function rebuildPoemDisplay() {
   const keep = 6;
   const recent = poemLog.slice(Math.max(0, poemLog.length - keep));
 
-  const esc = (s) => String(s)
-    .replace(/&/g,"&amp;")
-    .replace(/</g,"&lt;")
-    .replace(/>/g,"&gt;");
-
   const cursor = '<span class="cursor">█</span>';
   const focused = esc(heldLine || "") + cursor;
 
- // Act header (prompt box)
   promptEl.innerHTML = [
     `<div class="act-title">ACT 1</div>`,
     `<div class="act-sub">${esc(subtitle)}</div>`,
     `<div class="act-signal">${esc(signalLine)}</div>`
   ].join("");
 
-  // 2) Poem box is only the poem lines + typing line
   poemEl.innerHTML = [
     ...recent.map(l => `<span>${esc(l)}</span>`),
     `<span class="typing-line">${focused}</span>`
@@ -3137,18 +3665,109 @@ function buildFinalPoemTitle() {
   return `${pickFrom(genericSubjects, rand)} OF ${pickFrom(firstNouns, rand)}`;
 }
 
+function updateControlsPanel() {
+  if (!controlsContentEl) return;
+
+  if (mode === "boot") {
+    controlsContentEl.innerHTML = [
+      `<div><span class="control-label">Status:</span> Initializing observer</div>`,
+      `<div><span class="control-label">Please Wait:</span> The room is assembling</div>`
+    ].join("");
+    return;
+  }
+
+  if (mode === "menu") {
+    controlsContentEl.innerHTML = [
+      `<div><span class="control-label">Move:</span> ↑ ↓ or W / S</div>`,
+      `<div><span class="control-label">Select:</span> Enter or Space</div>`,
+      `<div><span class="control-label">Leave Screen:</span> Esc</div>`
+    ].join("");
+    return;
+  }
+
+  if (mode === "credits") {
+    controlsContentEl.innerHTML = [
+      `<div><span class="control-label">Return:</span> Esc</div>`,
+      `<div><span class="control-label">Also Return:</span> E or Space</div>`
+    ].join("");
+    return;
+  }
+
+  if (showFinalModal) {
+    const commonsMode = finalPoemTitle === "POETRY COMMONS";
+
+    controlsContentEl.innerHTML = commonsMode
+      ? [
+          `<div><span class="control-label">Read Aloud:</span> Space</div>`,
+          `<div><span class="control-label">Close:</span> Esc</div>`,
+          `<div><span class="control-label">Refresh Poems:</span> Use button</div>`
+        ].join("")
+      : [
+          `<div><span class="control-label">Speak Final:</span> Space</div>`,
+          `<div><span class="control-label">Close:</span> Esc or E</div>`,
+          `<div><span class="control-label">Restart:</span> R</div>`
+        ].join("");
+    return;
+  }
+
+  if (showActPoemModal) {
+    controlsContentEl.innerHTML = [
+      `<div><span class="control-label">Read Aloud:</span> Space</div>`,
+      `<div><span class="control-label">Close:</span> Esc or E</div>`,
+      `<div><span class="control-label">Restart:</span> R</div>`
+    ].join("");
+    return;
+  }
+
+  if (mode === "focus") {
+    controlsContentEl.innerHTML = [
+      `<div><span class="control-label">Inspect:</span> Mouse Wheel zoom</div>`,
+      `<div><span class="control-label">Interact:</span> E</div>`,
+      `<div><span class="control-label">Close:</span> Esc</div>`,
+      `<div><span class="control-label">Find Door:</span> Q</div>`,
+      `<div><span class="control-label">Restart:</span> R</div>`
+    ].join("");
+    return;
+  }
+
+  controlsContentEl.innerHTML = [
+    `<div><span class="control-label">Move:</span> WASD or Arrows</div>`,
+    `<div><span class="control-label">Interact:</span> E</div>`,
+    `<div><span class="control-label">Zoom:</span> Mouse Wheel</div>`,
+    `<div><span class="control-label">Close:</span> Esc</div>`,
+    `<div><span class="control-label">Find Door:</span> Q</div>`,
+    `<div><span class="control-label">Restart:</span> R</div>`
+  ].join("");
+}
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;");
+}
+
 /* ==========================================================
    UI PROMPT
 ========================================================== */
 function updateUI() {
   if (!promptEl) return;
 
-  const esc = (s) => String(s)
-    .replace(/&/g,"&amp;")
-    .replace(/</g,"&lt;")
-    .replace(/>/g,"&gt;");
+  updateControlsPanel();
 
   promptEl.classList.remove("urgent");
+
+  if (mode === "boot") {
+    return;
+  }
+
+  if (mode === "menu") {
+    return;
+  }
+
+  if (mode === "credits") {
+    return;
+  }
 
   const actTitle = (act === 3) ? "ACT 3" : ((act === 2) ? "ACT 2" : "ACT 1");
   const signalLine = (signal > 0)
@@ -3759,19 +4378,60 @@ function initProceduralMusic() {
 }
 
 function updateProceduralMusic() {
-  if (!audioArmed || !musicOn) return;
+  if (!audioArmed || !musicOn || !music.lead || !music.bass || !music.hatOsc || !music.filter) return;
 
+  // MENU / CREDITS / BOOT MUSIC
+  if (mode === "menu" || mode === "boot" || mode === "credits") {
+    music.speedSmoothed = lerp(music.speedSmoothed || 0, 0, 0.08);
+    music._energySmoothed = lerp(music._energySmoothed || 0, 0.12, 0.08);
+
+    music.bpm = lerp(music.bpm || 54, 54, 0.08);
+
+    const t = millis();
+    const stepMs = 60000 / music.bpm;
+    if (t - music.lastStepAt < stepMs) return;
+    music.lastStepAt = t;
+
+    music.step = (music.step + 1) % 16;
+
+    const scale = [0, 3, 7, 10];
+    const root = 146.83;
+
+    const leadDeg = scale[music.step % scale.length];
+    const leadF = root * Math.pow(2, leadDeg / 12);
+
+    const bassPattern = [0,0,0,0, 3,3,0,0, 7,7,3,3, 0,0,10,10];
+    const bassDeg = bassPattern[music.step];
+    const bassF = (root / 2) * Math.pow(2, bassDeg / 12);
+
+    music.lead.freq(leadF);
+    music.bass.freq(bassF);
+
+    music.lead.amp(0.045, 0.12);
+    music.bass.amp(0.035, 0.12);
+
+    let hatAmp = 0;
+    if (music.step === 4 || music.step === 12) hatAmp = 0.03;
+
+    music.hatOsc.freq(1200);
+    music.hatOsc.amp(hatAmp, 0.01);
+    music.hatOsc.amp(0, 0.08);
+
+    music.filter.freq(1100 + 180 * sin(millis() * 0.0007));
+    return;
+  }
+
+  // WORLD / FOCUS MUSIC
   const targetSpeed  = (mode === "world" && !paused && !showFinalModal) ? (player.speed01 || 0) : 0;
-  const targetEnergy = (mode === "world" && !paused && !showFinalModal) ? (player.energy  || 0) : 0;
+  const targetEnergy = (mode === "world" && !paused && !showFinalModal) ? (player.energy || 0) : 0;
 
-  music.speedSmoothed = lerp(music.speedSmoothed, targetSpeed, 0.10);
+  music.speedSmoothed = lerp(music.speedSmoothed || 0, targetSpeed, 0.10);
   music._energySmoothed = lerp(music._energySmoothed || 0, targetEnergy, 0.12);
 
   const groove = music.speedSmoothed || 0;
   const energy = music._energySmoothed || 0;
   const drive  = constrain(groove * 0.85 + energy * 0.55, 0, 1);
 
-  // Faster when moving
   music.bpm = lerp(music.bpmBase, music.bpmBase + 38, drive);
 
   const t = millis();
@@ -3781,8 +4441,7 @@ function updateProceduralMusic() {
 
   music.step = (music.step + 1) % 16;
 
-  // Notes
-  const scale = [0, 2, 4, 7, 9, 12]; // more upbeat than minor-ish
+  const scale = [0, 2, 4, 7, 9, 12];
   const root = 220;
 
   const leadDeg = scale[music.step % scale.length];
@@ -3792,7 +4451,6 @@ function updateProceduralMusic() {
   const bassDeg = bassPattern[music.step];
   const bassF = (root / 2) * Math.pow(2, bassDeg / 12);
 
-  // Amps
   const leadAmp = 0.030 + 0.12 * drive;
   const bassAmp = 0.025 + 0.11 * drive;
 
@@ -3802,27 +4460,17 @@ function updateProceduralMusic() {
   music.lead.amp(leadAmp, 0.03);
   music.bass.amp(bassAmp, 0.03);
 
-  // Hat "click" (no noise): short ticks with accents
   let hatAmp = 0;
-
-  // offbeats
   if (music.step % 2 === 1) hatAmp += 0.08;
-
-  // extra pep when moving
   if (drive > 0.55 && (music.step === 6 || music.step === 14)) hatAmp += 0.07;
-
-  // backbeat accent
   if (music.step === 4 || music.step === 12) hatAmp += 0.10 * (0.4 + 0.6 * energy);
 
-  // set hat frequency to feel like a tight click
   const hatF = 1800 + 1200 * drive;
   music.hatOsc.freq(hatF);
 
-  // super fast decay via amp ramp
   music.hatOsc.amp(hatAmp, 0.005);
   music.hatOsc.amp(0, 0.03);
 
-  // Filter brightness follows movement + signal
   music.filter.freq(lerp(1400, 4200, drive) + 120 * signal);
 }
 
@@ -3884,22 +4532,26 @@ function speakText(txt) {
   speechSynthesis.speak(utterance);
 }
 
-function toggleFinalSpeech() {
-  if (speaking || (window.speechSynthesis && (speechSynthesis.speaking || speechSynthesis.pending))) {
-    stopTTS();
+function speakPoetryCommons() {
+  if (!leaderboardEntries || !leaderboardEntries.length) {
+    speakText("Poetry Commons is empty right now.");
     return;
   }
 
-  const title = String(finalPoemTitle || (finalTitleEl ? finalTitleEl.textContent : "") || "").trim();
-  let body = String(finalPoemText || (finalBodyEl ? finalBodyEl.textContent : "") || "");
+  const text = leaderboardEntries
+    .slice(0, 8)
+    .map((entry, index) => {
+      const title = String(entry.title || "Untitled Poem").trim();
+      const name = String(entry.name || "anonymous observer").trim();
+      const body = String(entry.text || "").trim()
+        .replace(/\n+/g, "... ")
+        .replace(/\s+\./g, ".")
+        .replace(/\s+,/g, ",");
+      return `Poem ${index + 1}. ${title}. By ${name}. ${body}`;
+    })
+    .join(" ... ");
 
-  body = body
-    .replace(/\s+\./g, ".")
-    .replace(/\s+,/g, ",")
-    .replace(/\n+/g, " ... ")
-    .replace(/\.{4,}/g, "...")
-    .trim();
-
-  const fullText = [title, body].filter(Boolean).join(". ");
-  if (fullText) speakText(fullText);
+  if (text.length > 0) {
+    speakText(text);
+  }
 }
