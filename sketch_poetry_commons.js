@@ -769,6 +769,9 @@ function setup() {
     cnv.elt.setAttribute("tabindex", "0");
     cnv.elt.style.outline = "none";
     cnv.elt.focus();
+    cnv.elt.style.touchAction = "none";
+    cnv.elt.style.webkitUserSelect = "none";
+    cnv.elt.style.userSelect = "none";
 
     textFont("VT323");
 
@@ -1028,6 +1031,20 @@ function startAct3() {
   sfxDoorRumble();
 
   openActPoemModal("Stanza II", buildActPoemSnapshot());
+}
+
+function touchToCanvasXY(t) {
+  if (!cnv || !cnv.elt) return { ok: false, x: 0, y: 0 };
+
+  const rect = cnv.elt.getBoundingClientRect();
+  const scaleX = CW / rect.width;
+  const scaleY = CH / rect.height;
+
+  return {
+    ok: true,
+    x: (t.clientX - rect.left) * scaleX,
+    y: (t.clientY - rect.top) * scaleY
+  };
 }
 
 /* ==========================================================
@@ -2707,23 +2724,31 @@ function mouseWheel(event) {
 // - This does not interfere with the right-side HUD because we only
 //   activate movement when the touch begins inside the canvas rect.
 // --------------------------------------------------
-function _touchToCanvasXY(t) {
-  if (!cnv || !cnv.elt) return { x: 0, y: 0, ok: false };
-  const r = cnv.elt.getBoundingClientRect();
-  const cx = (t.clientX - r.left) * (CW / Math.max(1, r.width));
-  const cy = (t.clientY - r.top) * (CH / Math.max(1, r.height));
-  const ok = (t.clientX >= r.left && t.clientX <= r.right && t.clientY >= r.top && t.clientY <= r.bottom);
-  return { x: cx, y: cy, ok };
+function touchToCanvasXY(t) {
+  if (!cnv || !cnv.elt) return { ok: false, x: 0, y: 0 };
+
+  const rect = cnv.elt.getBoundingClientRect();
+  const scaleX = CW / Math.max(1, rect.width);
+  const scaleY = CH / Math.max(1, rect.height);
+
+  return {
+    ok: true,
+    x: (t.clientX - rect.left) * scaleX,
+    y: (t.clientY - rect.top) * scaleY
+  };
 }
 
 function touchStarted() {
   armAudioIfNeeded();
 
-  if (mode === "menu" && touches && touches.length > 0) {
-    const t = touches[0];
-    const p = _touchToCanvasXY(t);
-    if (!p.ok) return false;
+  if (!touches || touches.length === 0) return false;
 
+  const t = touches[0];
+  const p = touchToCanvasXY(t);
+  if (!p.ok) return false;
+
+  // MAIN MENU
+  if (mode === "menu") {
     const rects = getMenuOptionRects();
     for (const r of rects) {
       if (_ptInRect(p.x, p.y, r)) {
@@ -2735,17 +2760,31 @@ function touchStarted() {
     return false;
   }
 
-  if (mode === "credits" && touches && touches.length > 0) {
+  // CREDITS
+  if (mode === "credits") {
     mode = "menu";
+    if (cnv && cnv.elt) cnv.elt.focus();
     return false;
   }
 
-  if (paused || showFinalModal) return false;
-    if (mode === "focus" && touches && touches.length > 0) {
-    const t = touches[0];
-    const p = _touchToCanvasXY(t);
-    if (!p.ok) return false;
+  // FINAL MODAL / COMMONS
+  if (showFinalModal) {
+    if (finalPoemTitle === "POETRY COMMONS") {
+      speakPoetryCommons();
+    } else {
+      toggleFinalSpeech();
+    }
+    return false;
+  }
 
+  // ACT POEM MODAL
+  if (showActPoemModal) {
+    closeActPoemModal();
+    return false;
+  }
+
+  // FOCUS MODE
+  if (mode === "focus") {
     const btn = getInteractButtonRect();
     if (_ptInRect(p.x, p.y, btn)) {
       tryInteract();
@@ -2753,10 +2792,12 @@ function touchStarted() {
     }
 
     const { minus, plus } = getZoomButtons();
+
     if (_ptInRect(p.x, p.y, minus)) {
       focusZoomTarget = max(0.8, focusZoomTarget - 0.12);
       return false;
     }
+
     if (_ptInRect(p.x, p.y, plus)) {
       focusZoomTarget = min(3.0, focusZoomTarget + 0.12);
       return false;
@@ -2764,14 +2805,10 @@ function touchStarted() {
 
     return false;
   }
-  if (mode !== "world") return false;
 
-  // Bind the first touch that starts inside the canvas
-  const t = touches[0];
-  const p = _touchToCanvasXY(t);
-  if (!p.ok) return false;
+  // WORLD MODE
+  if (paused || mode !== "world") return false;
 
-  // Tap button: Interact / Close
   const btn = getInteractButtonRect();
   if (_ptInRect(p.x, p.y, btn)) {
     tryInteract();
@@ -2779,12 +2816,69 @@ function touchStarted() {
   }
 
   touchMove.active = true;
-  touchMove.id = (typeof t.id !== "undefined") ? t.id : (typeof t.identifier !== "undefined" ? t.identifier : 0);
+  touchMove.id = (typeof t.id !== "undefined")
+    ? t.id
+    : ((typeof t.identifier !== "undefined") ? t.identifier : 0);
+
   touchMove.startX = p.x;
   touchMove.startY = p.y;
   touchMove.x = p.x;
   touchMove.y = p.y;
-  return false; // prevent page scroll
+
+  return false;
+}
+
+function touchMoved() {
+  if (!touchMove.active || !touches || touches.length === 0) return false;
+
+  let t = null;
+  for (const tt of touches) {
+    const tid = (typeof tt.id !== "undefined")
+      ? tt.id
+      : ((typeof tt.identifier !== "undefined") ? tt.identifier : 0);
+
+    if (tid === touchMove.id) {
+      t = tt;
+      break;
+    }
+  }
+
+  if (!t) return false;
+
+  const p = touchToCanvasXY(t);
+  if (!p.ok) return false;
+
+  touchMove.x = p.x;
+  touchMove.y = p.y;
+
+  return false;
+}
+
+function touchEnded() {
+  if (!touches || touches.length === 0) {
+    touchMove.active = false;
+    touchMove.id = null;
+    return false;
+  }
+
+  let stillThere = false;
+  for (const tt of touches) {
+    const tid = (typeof tt.id !== "undefined")
+      ? tt.id
+      : ((typeof tt.identifier !== "undefined") ? tt.identifier : 0);
+
+    if (tid === touchMove.id) {
+      stillThere = true;
+      break;
+    }
+  }
+
+  if (!stillThere) {
+    touchMove.active = false;
+    touchMove.id = null;
+  }
+
+  return false;
 }
 
 function getZoomButtons() {
@@ -2835,7 +2929,7 @@ function touchMoved() {
   }
   if (!t) return false;
 
-  const p = _touchToCanvasXY(t);
+  const p = touchToCanvasXY(t);
   touchMove.x = p.x;
   touchMove.y = p.y;
   return false;
@@ -3251,7 +3345,7 @@ function drawFocusMode() {
     text("Press E to seal the final poem.", 16 * S, 54 * S);
   }
 
-  drawTouchButtons();
+  drawFocusTouchButtons();
 }
 
 function drawActPoemModal() {
