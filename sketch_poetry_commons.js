@@ -2769,11 +2769,6 @@ function touchStarted() {
 
   // FINAL MODAL / COMMONS
   if (showFinalModal) {
-    if (finalPoemTitle === "POETRY COMMONS") {
-      speakPoetryCommons();
-    } else {
-      toggleFinalSpeech();
-    }
     return false;
   }
 
