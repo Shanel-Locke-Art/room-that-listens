@@ -80,6 +80,12 @@ body{
 .rightpanels{ grid-area:right; }
 .game-frame{ grid-area:game; }
 .poem{ grid-area:poem; }
+.game-frame,
+.game-frame canvas {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
 
 /* =========================
    ACT HEADER
@@ -574,90 +580,124 @@ body::after{
 /* =========================
    MOBILE
 ========================= */
-@media (max-width: 820px){
-  body{
-    overflow:auto;
+@media (max-width: 900px) {
+  html, body {
+    overflow: auto;
+    height: auto;
   }
 
-  .hud-top{
-    height:auto;
-    grid-template-columns:1fr;
-    grid-template-rows:auto auto auto auto;
-    grid-template-areas:
-      "prompt"
-      "right"
-      "game"
-      "poem";
+  .final-content {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
   }
 
-  .rightpanels{
-    height:auto;
+  .final-poem-wrap,
+  .leaderboard-panel {
+    width: 100%;
+    max-width: none;
   }
 
-  .prompt{
-    grid-template-columns:1fr;
-    padding:12px 14px;
+  .leaderboard-list {
+    max-height: 42dvh;
+    overflow-y: auto;
   }
 
-  .prompt .act-right{
-    text-align:left;
-    white-space:normal;
+  .leaderboard-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
   }
 
-  .prompt .act-title{
-    font-size:38px;
+  .leaderboard-btn {
+    width: 100%;
+  }
+
+  .hud-top {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 8px;
+    height: auto;
+    min-height: 100dvh;
+  }
+
+  .prompt,
+  .game-frame,
+  .poem,
+  .rightpanels {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .prompt {
+    padding: 12px 14px;
+  }
+
+  .prompt .act-title {
+    font-size: 34px;
   }
 
   .prompt .act-signal,
-  .prompt .act-sub{
-    font-size:20px;
+  .prompt .act-sub {
+    font-size: 18px;
   }
 
-  .panel-title{
-    font-size:26px;
+  .rightpanels {
+    order: 3;
+    overflow: visible;
+    padding-right: 0;
   }
 
-  .game-frame{
-    height:min(65vh, 520px);
+  .game-frame {
+    order: 2;
+    min-height: 48dvh;
+    height: 48dvh;
   }
 
-  .poem{
-    max-height:190px;
-    overflow:auto;
-    padding-bottom:28px;
+  .poem {
+    order: 4;
+    height: 150px;
   }
 
-  .final-content{
-    grid-template-columns:1fr;
-    grid-template-rows:auto auto;
+  .controls-box,
+  .howto-box {
+    padding: 12px;
+  }
+}
+
+@media (max-width: 600px) {
+  .prompt {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
   }
 
-  .final-title{
-    font-size:28px;
-    padding:14px 16px 6px 16px;
+  .prompt .act-title {
+    font-size: 28px;
   }
 
-  .final-body{
-    font-size:20px;
-    line-height:1.55;
-    padding:14px 16px 18px 16px;
-    max-height:38vh;
+  .prompt .act-signal,
+  .prompt .act-sub {
+    font-size: 16px;
+    line-height: 1.2;
   }
 
-  .leaderboard-panel{
-    padding:16px 18px 20px 18px;
+  .panel-title {
+    font-size: 28px;
   }
 
-  .leaderboard-title{
-    font-size:28px;
+  .panel-sub {
+    font-size: 18px;
   }
 
-  .leaderboard-status,
-  .leaderboard-label{
-    font-size:18px;
+  .game-frame {
+    min-height: 42dvh;
+    height: 42dvh;
   }
 
-  .leaderboard-list{
-    max-height:30vh;
+  .poem {
+    height: 132px;
+    font-size: 18px;
   }
 }

@@ -594,9 +594,15 @@ function speakText(text) {
         leaderboardStatusEl.textContent = "Poetry Commons is live.";
       }
 
-      if (poetNameInputEl) {
-        setTimeout(() => poetNameInputEl.focus(), 0);
+      setTimeout(() => {
+      if (finalPoemTitle === "POETRY COMMONS") {
+        if (cnv && cnv.elt) cnv.elt.focus();
+      } else if (poetNameInputEl && poetNameInputEl.style.display !== "none" && !poetNameInputEl.disabled) {
+        poetNameInputEl.focus();
+      } else if (cnv && cnv.elt) {
+        cnv.elt.focus();
       }
+    }, 0);
     }
   };
 
@@ -701,8 +707,6 @@ let creditsLines = [
   "This system was trained on noticing.",
   "",
   "Primary Observer: L0g1cF@11acy",
-  "Secondary Observer: The Machine",
-  "",
   "Built using p5.js",
   "An open source library for creative coding",
   "",
@@ -711,9 +715,6 @@ let creditsLines = [
   "",
   "All poems are co-authored.",
   "No poem is owned.",
-  "",
-  "Some patterns were found.",
-  "Some were made.",
   "",
   "You were here."
 ];
@@ -1296,6 +1297,23 @@ function drawMenuScreen() {
     text(MENU_LORE[menuLoreIndex], loreX, loreY, loreW, loreH);
 
     pop();
+}
+
+function getMenuOptionRects() {
+  const centerX = CW * 0.5;
+  const centerY = CH * 0.28;
+  const startX = CW * 0.5 - 130 * S;
+  const startY = CH * 0.5 - 20 * S;
+  const lineH = 42 * S;
+
+  return MENU_OPTIONS.map((label, i) => ({
+    label,
+    x: startX - 12 * S,
+    y: startY + i * lineH - 18 * S,
+    w: 360 * S,
+    h: 34 * S,
+    index: i
+  }));
 }
 
 function drawCreditsScreen() {
@@ -2701,9 +2719,52 @@ function _touchToCanvasXY(t) {
 function touchStarted() {
   armAudioIfNeeded();
 
+  if (mode === "menu" && touches && touches.length > 0) {
+    const t = touches[0];
+    const p = _touchToCanvasXY(t);
+    if (!p.ok) return false;
+
+    const rects = getMenuOptionRects();
+    for (const r of rects) {
+      if (_ptInRect(p.x, p.y, r)) {
+        menuIndex = r.index;
+        handleMenuSelection();
+        return false;
+      }
+    }
+    return false;
+  }
+
+  if (mode === "credits" && touches && touches.length > 0) {
+    mode = "menu";
+    return false;
+  }
+
   if (paused || showFinalModal) return false;
+    if (mode === "focus" && touches && touches.length > 0) {
+    const t = touches[0];
+    const p = _touchToCanvasXY(t);
+    if (!p.ok) return false;
+
+    const btn = getInteractButtonRect();
+    if (_ptInRect(p.x, p.y, btn)) {
+      tryInteract();
+      return false;
+    }
+
+    const { minus, plus } = getZoomButtons();
+    if (_ptInRect(p.x, p.y, minus)) {
+      focusZoomTarget = max(0.8, focusZoomTarget - 0.12);
+      return false;
+    }
+    if (_ptInRect(p.x, p.y, plus)) {
+      focusZoomTarget = min(3.0, focusZoomTarget + 0.12);
+      return false;
+    }
+
+    return false;
+  }
   if (mode !== "world") return false;
-  if (!touches || touches.length === 0) return false;
 
   // Bind the first touch that starts inside the canvas
   const t = touches[0];
@@ -2724,6 +2785,43 @@ function touchStarted() {
   touchMove.x = p.x;
   touchMove.y = p.y;
   return false; // prevent page scroll
+}
+
+function getZoomButtons() {
+  const size = 56;
+  const gap = 12;
+  const y = CH - size - 24;
+  return {
+    minus: { x: 24, y, w: size, h: size },
+    plus:  { x: 24 + size + gap, y, w: size, h: size }
+  };
+}
+
+function drawFocusTouchButtons() {
+  if (mode !== "focus" || showFinalModal) return;
+
+  const { minus, plus } = getZoomButtons();
+
+  push();
+  textAlign(CENTER, CENTER);
+  textSize(28);
+
+  for (const btn of [minus, plus]) {
+    fill(0, 0, 0, 95);
+    noStroke();
+    rect(btn.x, btn.y, btn.w, btn.h, 8);
+
+    stroke(0, 255, 170, 170);
+    strokeWeight(2);
+    noFill();
+    rect(btn.x, btn.y, btn.w, btn.h, 8);
+  }
+
+  noStroke();
+  fill(180, 255, 220, 235);
+  text("−", minus.x + minus.w / 2, minus.y + minus.h / 2 + 1);
+  text("+", plus.x + plus.w / 2, plus.y + plus.h / 2 + 1);
+  pop();
 }
 
 function touchMoved() {
