@@ -779,7 +779,7 @@ function setup() {
   window.addEventListener("keydown", (e) => {
     if (!showFinalModal) return;
 
-    if (e.key === "Escape") {
+    if (e.key.toLowerCase() === "x") {
       e.preventDefault();
       e.stopPropagation();
       closeFinalModal(finalPoemTitle === "POETRY COMMONS");
@@ -1121,7 +1121,7 @@ function resetRun(startInMenu = false) {
     queuePoemLine("You and the machine co-write a poem by moving through it.");
     queuePoemLine("Interact with 2 objects, then the door. The order becomes the poem.");
     queuePoemLine("Hidden SIG nodes are withheld words. Find them to deepen SIGNAL.");
-    queuePoemLine("Controls: WASD or arrows move. E interact. Q ping door. ESC close. R restart.");
+    queuePoemLine("Controls: WASD or arrows move. E interact. Q ping door. X close. R restart.");
   }
 
   if (cnv && cnv.elt) cnv.elt.focus();
@@ -2578,8 +2578,8 @@ function keyPressed() {
     return false;
   }
 
-  if (mode === "credits") {
-    if (keyCode === ESCAPE || key === "e" || key === "E" || key === " " || keyCode === 32) {
+    if (mode === "credits") {
+    if (key === "x" || key === "X" || key === "e" || key === "E") {
       mode = "menu";
       return false;
     }
@@ -2590,7 +2590,7 @@ function keyPressed() {
      FINAL POEM MODAL
   ------------------------- */
   if (showFinalModal) {
-    if (keyCode === ESCAPE) {
+    if (key === "x" || key === "X") {
       closeFinalModal(finalPoemTitle === "POETRY COMMONS");
       return false;
     }
@@ -2626,7 +2626,7 @@ function keyPressed() {
      ACT / STANZA MODAL
   ------------------------- */
   if (showActPoemModal) {
-    if (keyCode === ESCAPE || key === "e" || key === "E" || key === " " || keyCode === 32) {
+    if (key === "x" || key === "X" || key === "e" || key === "E" || key === " " || keyCode === 32) {
       closeActPoemModal();
       return false;
     }
@@ -2649,7 +2649,7 @@ function keyPressed() {
   /* -------------------------
      NORMAL GAME INPUT
   ------------------------- */
-  if (keyCode === ESCAPE) {
+  if (key === "x" || key === "X") {
     paused = !paused;
     return false;
   }
@@ -3333,7 +3333,7 @@ function drawFocusMode() {
 
   fill(0, 255, 170, 170);
   textSize(13 * S);
-  text("Mouse wheel zoom. E or ESC closes. Q pings door.", 16 * S, 34 * S);
+  text("Mouse wheel zoom. E closes. Q pings door.", 16 * S, 34 * S);
 
   if (focusId === "door" && canFinalizePoem()) {
     fill(0, 255, 170, 230);
@@ -3370,7 +3370,7 @@ function drawActPoemModal() {
 
   fill(0, 255, 170, 170);
   textSize(12 * S);
-  text("E / SPACE / ESC to continue", tx, ty + 28 * S);
+  text("E / SPACE / X to continue", tx, ty + 28 * S);
 
   fill(0, 255, 170, 235);
   textSize(15 * S);
@@ -3430,8 +3430,8 @@ function drawFinalModal() {
   textSize(12 * S);
   fill(0, 255, 170, 170);
   const hint = ttsEnabled
-    ? "SPACE: SPEAK OR STOP   ESC: CLOSE   R: RESTART"
-    : "ESC: CLOSE   R: RESTART";
+    ? "SPACE: SPEAK OR STOP   X: CLOSE   R: RESTART"
+    : "X: CLOSE   R: RESTART";
   text(hint, tx, ty + 26 * S);
 
   fill(0, 255, 170, 235);
@@ -3672,7 +3672,7 @@ function rebuildPoemDisplay() {
       `</div>`,
       `<div class="act-right">`,
         `<div class="act-signal">A record of observers, systems, and leaks.</div>`,
-        `<div class="act-sub">ESC returns to the menu.</div>`,
+        `<div class="act-sub">X returns to the menu.</div>`,
       `</div>`
     ].join("");
 
@@ -3867,14 +3867,14 @@ function updateControlsPanel() {
     controlsContentEl.innerHTML = [
       `<div><span class="control-label">Move:</span> ↑ ↓ or W / S</div>`,
       `<div><span class="control-label">Select:</span> Enter or Space</div>`,
-      `<div><span class="control-label">Leave Screen:</span> Esc</div>`
+      `<div><span class="control-label">Leave Screen:</span> X</div>`
     ].join("");
     return;
   }
 
   if (mode === "credits") {
     controlsContentEl.innerHTML = [
-      `<div><span class="control-label">Return:</span> Esc</div>`,
+      `<div><span class="control-label">Return:</span> X</div>`,
       `<div><span class="control-label">Also Return:</span> E or Space</div>`
     ].join("");
     return;
@@ -3886,12 +3886,12 @@ function updateControlsPanel() {
     controlsContentEl.innerHTML = commonsMode
       ? [
           `<div><span class="control-label">Read Aloud:</span> Space</div>`,
-          `<div><span class="control-label">Close:</span> Esc</div>`,
+          `<div><span class="control-label">Close:</span> X</div>`,
           `<div><span class="control-label">Refresh Poems:</span> Use button</div>`
         ].join("")
       : [
           `<div><span class="control-label">Speak Final:</span> Space</div>`,
-          `<div><span class="control-label">Close:</span> Esc or E</div>`,
+          `<div><span class="control-label">Close:</span> X or E</div>`,
           `<div><span class="control-label">Restart:</span> R</div>`
         ].join("");
     return;
@@ -3900,7 +3900,7 @@ function updateControlsPanel() {
   if (showActPoemModal) {
     controlsContentEl.innerHTML = [
       `<div><span class="control-label">Read Aloud:</span> Space</div>`,
-      `<div><span class="control-label">Close:</span> Esc or E</div>`,
+      `<div><span class="control-label">Close:</span>  or E</div>`,
       `<div><span class="control-label">Restart:</span> R</div>`
     ].join("");
     return;
@@ -3910,7 +3910,7 @@ function updateControlsPanel() {
     controlsContentEl.innerHTML = [
       `<div><span class="control-label">Inspect:</span> Mouse Wheel zoom</div>`,
       `<div><span class="control-label">Interact:</span> E</div>`,
-      `<div><span class="control-label">Close:</span> Esc</div>`,
+      `<div><span class="control-label">Close:</span> X</div>`,
       `<div><span class="control-label">Find Door:</span> Q</div>`,
       `<div><span class="control-label">Restart:</span> R</div>`
     ].join("");
@@ -3921,7 +3921,7 @@ function updateControlsPanel() {
     `<div><span class="control-label">Move:</span> WASD or Arrows</div>`,
     `<div><span class="control-label">Interact:</span> E</div>`,
     `<div><span class="control-label">Zoom:</span> Mouse Wheel</div>`,
-    `<div><span class="control-label">Close:</span> Esc</div>`,
+    `<div><span class="control-label">Close:</span> X</div>`,
     `<div><span class="control-label">Find Door:</span> Q</div>`,
     `<div><span class="control-label">Restart:</span> R</div>`
   ].join("");
@@ -3964,12 +3964,15 @@ function updateUI() {
   let subtitle = "";
 
   if (showFinalModal) {
-    subtitle = "Final poem. ESC closes. R restarts. Space speaks.";
+    subtitle = "Final poem. X closes. R restarts. Space speaks.";
   } else if (mode === "focus") {
-    if (focusId === "door" && canFinalizePoem()) subtitle = "Door ready. Press E to seal. Mouse wheel zoom.";
-    else subtitle = "Focus view. Mouse wheel zoom. E or ESC closes. Q pings door.";
+    if (focusId === "door" && canFinalizePoem()) {
+      subtitle = "Door ready. Press E to seal. Mouse wheel zoom.";
+    } else {
+      subtitle = "Focus View. Mouse Wheel Zoom. E Closes. Q Pings Door.";
+    }
   } else if (paused) {
-    subtitle = "Paused. ESC returns. R restarts.";
+    subtitle = "Paused. E returns. R restarts.";
   } else {
     const nonDoorCount = history.filter(h => h !== "door").length;
     const need = Math.max(0, 2 - nonDoorCount);
