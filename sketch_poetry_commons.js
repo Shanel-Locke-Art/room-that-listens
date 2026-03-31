@@ -143,7 +143,6 @@ let bootDurationMs = 3200;
 let menuLoreIndex = 0;
 let menuLoreChangedAt = 0;
 let menuLoreEveryMs = 3600;
-let entryPromptVisible = false;
 
 const MENU_LORE = [
   "The system does not generate poems. It remembers what you notice.",
@@ -504,28 +503,27 @@ function openActPoemModal(title, text) {
   }
 }
 
-  function sfxPageTurn() {
-    if (!audioArmed) return;
+function sfxPageTurn() {
+  if (!audioArmed) return;
+  // soft paper-like flick + tiny tail
+  sfxBlip(740, 0.001, 0.03, 0.06);
+  setTimeout(() => sfxBlip(520, 0.001, 0.025, 0.05), 22);
+  setTimeout(() => sfxBlip(320, 0.001, 0.035, 0.04), 48);
+}
 
-    // soft paper-like flick + tiny tail
-    sfxBlip(740, 0.001, 0.03, 0.06);
-    setTimeout(() => sfxBlip(520, 0.001, 0.025, 0.05), 22);
-    setTimeout(() => sfxBlip(320, 0.001, 0.035, 0.04), 48);
+function closeActPoemModal() {
+  sfxPageTurn();
+
+  showActPoemModal = false;
+  paused = false;
+
+  if (actPoemModalEl) {
+    actPoemModalEl.classList.remove("is-open");
+    actPoemModalEl.setAttribute("aria-hidden", "true");
   }
 
-  function closeActPoemModal() {
-    sfxPageTurn();
-
-    showActPoemModal = false;
-    paused = false;
-
-    if (actPoemModalEl) {
-      actPoemModalEl.classList.remove("is-open");
-      actPoemModalEl.setAttribute("aria-hidden", "true");
-    }
-
-    if (cnv && cnv.elt) cnv.elt.focus();
-  }
+  if (cnv && cnv.elt) cnv.elt.focus();
+}
 
 /* =========================
    HIDDEN FOCUS CACHE
@@ -572,14 +570,35 @@ let ttsEnabled = true;
 let speaking = false;
 let currentUtterance = null;
 
-function speakText(text) {
-  if (!ttsEnabled || !window.speechSynthesis) return;
+function pickBestVoice() {
+  if (!window.speechSynthesis) return null;
+  const voices = speechSynthesis.getVoices ? speechSynthesis.getVoices() : [];
+  if (!voices || !voices.length) return null;
+  const preferred = voices.find(v => /en/i.test(v.lang || "") && /female|zira|samantha|victoria|karen|moira/i.test(v.name || ""));
+  if (preferred) return preferred;
+  const english = voices.find(v => /en/i.test(v.lang || ""));
+  return english || voices[0] || null;
+}
 
+function speakText(rawText) {
+  if (!ttsEnabled || !window.speechSynthesis) return;
   stopTTS();
 
-  currentUtterance = new SpeechSynthesisUtterance(text);
-  currentUtterance.rate = 0.95;
-  currentUtterance.pitch = 1;
+  // Clean text for natural speech delivery
+  const cleanText = String(rawText || "")
+    .replace(/\s+([,.;:!?])/g, "$1")
+    .replace(/\n+/g, " ... ")
+    .replace(/\.{4,}/g, "...")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  if (!cleanText) return;
+
+  currentUtterance = new SpeechSynthesisUtterance(cleanText);
+  const voice = pickBestVoice();
+  if (voice) currentUtterance.voice = voice;
+  currentUtterance.rate = 0.9;
+  currentUtterance.pitch = 0.96;
   currentUtterance.volume = 1;
 
   currentUtterance.onend = () => {
@@ -595,15 +614,20 @@ function speakText(text) {
       }
 
       setTimeout(() => {
-      if (finalPoemTitle === "POETRY COMMONS") {
-        if (cnv && cnv.elt) cnv.elt.focus();
-      } else if (poetNameInputEl && poetNameInputEl.style.display !== "none" && !poetNameInputEl.disabled) {
-        poetNameInputEl.focus();
-      } else if (cnv && cnv.elt) {
-        cnv.elt.focus();
-      }
-    }, 0);
+        if (finalPoemTitle === "POETRY COMMONS") {
+          if (cnv && cnv.elt) cnv.elt.focus();
+        } else if (poetNameInputEl && poetNameInputEl.style.display !== "none" && !poetNameInputEl.disabled) {
+          poetNameInputEl.focus();
+        } else if (cnv && cnv.elt) {
+          cnv.elt.focus();
+        }
+      }, 0);
     }
+  };
+
+  currentUtterance.onerror = () => {
+    speaking = false;
+    currentUtterance = null;
   };
 
   speaking = true;
@@ -671,7 +695,16 @@ function speakPoetryCommons() {
     return;
   }
 
-  const entries = Array.from(document.querySelectorAll("#leaderboard-list .leaderboard-entry"));
+  // Use the live leaderboardEntries array (already normalised) rather than
+  // scraping the DOM, so this works even before the list is rendered.
+  const entries = leaderboardEntries && leaderboardEntries.length
+    ? leaderboardEntries
+    : Array.from(document.querySelectorAll("#leaderboard-list .leaderboard-entry"))
+        .map(el => ({
+          title: (el.querySelector(".leaderboard-poem-title")?.textContent || "Untitled Poem").trim(),
+          name:  (el.querySelector(".leaderboard-name")?.textContent  || "anonymous observer").trim(),
+          text:  (el.querySelector(".leaderboard-poem-text")?.textContent || "").trim()
+        }));
 
   if (!entries.length) {
     speakText("Poetry Commons is empty right now.");
@@ -680,23 +713,19 @@ function speakPoetryCommons() {
 
   const text = entries
     .slice(0, 8)
-    .map((entryEl, index) => {
-      const title = (entryEl.querySelector(".leaderboard-poem-title")?.textContent || "Untitled Poem").trim();
-      const name = (entryEl.querySelector(".leaderboard-name")?.textContent || "anonymous observer").trim();
-      const body = (entryEl.querySelector(".leaderboard-poem-text")?.textContent || "")
-        .trim()
+    .map((entry, index) => {
+      const title = String(entry.title || "Untitled Poem").trim();
+      const name  = String(entry.name  || "anonymous observer").trim();
+      const body  = String(entry.text  || "").trim()
         .replace(/\s+\./g, ".")
         .replace(/\s+,/g, ",")
         .replace(/\n+/g, "... ")
         .replace(/\.{4,}/g, "...");
-
       return `Poem ${index + 1}. ${title}. By ${name}. ${body}`;
     })
     .join(" ... ");
 
-  if (text.length > 0) {
-    speakText(text);
-  }
+  if (text.length > 0) speakText(text);
 }
 
 let creditsIndex = 0;
@@ -802,10 +831,20 @@ function setup() {
   resetRun(true);
 }
 
+let _resizeTimer = null;
+
 function windowResized() {
-  computeCanvasSize();
-  resizeCanvas(CW, CH);
-  createBuffersAndShaders();
+  // Debounce: wait 180ms after the last resize event before rebuilding
+  // shaders and buffers. This prevents stalls on mobile orientation changes.
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(() => {
+    computeCanvasSize();
+    resizeCanvas(CW, CH);
+    // Clear cached graphics that embed the old canvas dimensions
+    hiddenFocusCache.clear();
+    itemSpriteCache.clear();
+    createBuffersAndShaders();
+  }, 180);
 }
 
 /* ==========================================================
@@ -1092,7 +1131,6 @@ function resetRun(startInMenu = false) {
   pulse.speed = 18;
 
   menuIndex = 0;
-  entryPromptVisible = false;
 
   world.w = Math.floor(2400 + random(0, 1400));
   world.h = Math.floor(1700 + random(0, 1000));
@@ -1132,7 +1170,6 @@ function beginWritingFromMenu() {
   queuePoemLine("The room is not ready.");
   queuePoemLine("It is building itself from what you expect.");
   queuePoemLine("Step inside. Notice something before it notices you back.");
-  entryPromptVisible = true;
 }
 
 function setCommonsReadOnly(isReadOnly) {
@@ -1473,7 +1510,6 @@ function draw() {
   const inWorldPlay = (!showFinalModal && !paused && mode === "world");
   if (inWorldPlay) {
     updateMovement();
-    updateFootsteps();
   }
 
   updateCamera();
@@ -1809,35 +1845,61 @@ function drawWorldMode() {
 function drawTouchJoystick() {
   if (!touchMove || !touchMove.active) return;
 
+  const outerR = TOUCH_MAX_R;
+  const innerDot = Math.max(8, 10 * S);
+  const thumbDot = Math.max(10, 13 * S);
+
   push();
   noFill();
-  stroke(0, 255, 170, 140);
-  strokeWeight(2);
-  circle(touchMove.startX, touchMove.startY, TOUCH_MAX_R * 2);
+  stroke(0, 255, 170, 120);
+  strokeWeight(Math.max(1.5, 2 * S));
+  circle(touchMove.startX, touchMove.startY, outerR * 2);
 
-  stroke(0, 255, 120, 180);
+  // Inner guide ring at half radius
+  stroke(0, 255, 120, 70);
+  circle(touchMove.startX, touchMove.startY, outerR);
+
+  // Direction line
+  stroke(0, 255, 120, 160);
+  strokeWeight(Math.max(1.5, 2 * S));
   line(touchMove.startX, touchMove.startY, touchMove.x, touchMove.y);
 
+  // Origin dot
   noStroke();
-  fill(0, 255, 170, 190);
-  circle(touchMove.startX, touchMove.startY, 10);
-  fill(180, 255, 220, 220);
-  circle(touchMove.x, touchMove.y, 12);
+  fill(0, 255, 170, 180);
+  circle(touchMove.startX, touchMove.startY, innerDot * 2);
+
+  // Thumb dot
+  fill(180, 255, 220, 230);
+  circle(touchMove.x, touchMove.y, thumbDot * 2);
   pop();
 }
 
 
 function getInteractButtonRect() {
-  // Screen-space button for mobile (canvas coordinates)
-  const m = 20;   // more inset from edges
-  const h = 52;   // slightly taller
-  const w = 170;  // slightly wider
-
+  // Scale button size with canvas so it's always comfortable on any phone
+  const btnH = Math.max(52, Math.round(CH * 0.10));
+  const btnW = Math.max(160, Math.round(CW * 0.22));
+  const margin = Math.max(14, Math.round(CW * 0.025));
   return {
-    x: Math.max(m, CW - w - m),
-    y: Math.max(m, CH - h - m - 50), // lift it upward a bit
-    w,
-    h
+    x: CW - btnW - margin,
+    y: CH - btnH - margin,
+    w: btnW,
+    h: btnH
+  };
+}
+
+function getQPingButtonRect() {
+  // "PING DOOR (Q)" button — sits to the left of the interact button
+  const btnH = Math.max(52, Math.round(CH * 0.10));
+  const btnW = Math.max(130, Math.round(CW * 0.18));
+  const margin = Math.max(14, Math.round(CW * 0.025));
+  const interactR = getInteractButtonRect();
+  return {
+    x: interactR.x - btnW - Math.max(10, Math.round(CW * 0.015)),
+    y: interactR.y,
+    w: btnW,
+    h: btnH
   };
 }
 
@@ -1846,30 +1908,51 @@ function _ptInRect(px, py, r) {
 }
 
 function drawTouchButtons() {
-  // Only show the button when we're in-game (world or focus) and not paused by modal
   if (showFinalModal) return;
 
-  const r = getInteractButtonRect();
+  const interact = getInteractButtonRect();
+  const fontSize = Math.max(14, Math.round(interact.h * 0.36));
 
   push();
-  // Backplate
-  noStroke();
-  fill(0, 0, 0, 95);
-  rect(r.x, r.y, r.w, r.h, 6);
+  textAlign(CENTER, CENTER);
+  textFont("VT323");
+  textSize(fontSize);
 
-  // Outline
-  stroke(0, 255, 170, 170);
+  // --- INTERACT / CLOSE button ---
+  noStroke();
+  fill(0, 0, 0, 110);
+  rect(interact.x, interact.y, interact.w, interact.h, 8);
+  stroke(0, 255, 170, 180);
   strokeWeight(2);
   noFill();
-  rect(r.x, r.y, r.w, r.h, 6);
-
-  // Label
+  rect(interact.x, interact.y, interact.w, interact.h, 8);
   noStroke();
-  fill(180, 255, 220, 235);
-  textAlign(CENTER, CENTER);
-  textSize(18);
-  const label = (mode === "focus") ? "CLOSE (E)" : "INTERACT (E)";
-  text(label, r.x + r.w * 0.5, r.y + r.h * 0.52);
+  fill(180, 255, 220, 240);
+
+  let interactLabel;
+  if (mode === "focus") {
+    interactLabel = (focusId === "door" && canFinalizePoem()) ? "SEAL POEM (E)" : "CLOSE (E)";
+  } else {
+    const near = pickInteractTarget();
+    interactLabel = (near.s && near.d <= INTERACT_RADIUS) ? "INTERACT (E)" : "EXPLORE";
+  }
+  text(interactLabel, interact.x + interact.w * 0.5, interact.y + interact.h * 0.52);
+
+  // --- PING DOOR button (world mode only) ---
+  if (mode === "world" && !paused) {
+    const ping = getQPingButtonRect();
+    noStroke();
+    fill(0, 0, 0, 110);
+    rect(ping.x, ping.y, ping.w, ping.h, 8);
+    stroke(0, 255, 100, 150);
+    strokeWeight(2);
+    noFill();
+    rect(ping.x, ping.y, ping.w, ping.h, 8);
+    noStroke();
+    fill(160, 255, 180, 220);
+    text("PING DOOR (Q)", ping.x + ping.w * 0.5, ping.y + ping.h * 0.52);
+  }
+
   pop();
 }
 
@@ -2289,39 +2372,6 @@ function getCompassTarget() {
   return door ? { ...door, compassType: "door" } : null;
 }
 
-function nearestNonDoorInteractive() {
-  const list = stations.filter(s =>
-    s.id !== "door" &&
-    (s.kind === "core" || s.kind === "decor" || (s.kind === "hidden" && s.revealed))
-  );
-
-  let best = null;
-  let bestD = 1e9;
-  for (const s of list) {
-    const d = dist(player.x, player.y, s.x, s.y);
-    if (d < bestD) {
-      bestD = d;
-      best = s;
-    }
-  }
-  return best;
-}
-
-function nearestAvailableSig() {
-  const list = stations.filter(s => s.kind === "hidden" && s.revealed);
-
-  let best = null;
-  let bestD = 1e9;
-  for (const s of list) {
-    const d = dist(player.x, player.y, s.x, s.y);
-    if (d < bestD) {
-      bestD = d;
-      best = s;
-    }
-  }
-  return best;
-}
-
 function drawSignalMeter() {
   const w = 160 * S;
   const h = 18 * S;
@@ -2601,7 +2651,7 @@ function keyPressed() {
       return false;
     }
 
-    if (key === "t" || key === "T") {
+    if ((key === "t" || key === "T") && window.location.hash === "#debug") {
       debugOpenFinalPoem();
       return false;
     }
@@ -2637,7 +2687,7 @@ function keyPressed() {
       return false;
     }
 
-    if (key === "t" || key === "T") {
+    if ((key === "t" || key === "T") && window.location.hash === "#debug") {
       closeActPoemModal();
       debugOpenFinalPoem();
       return false;
@@ -2659,7 +2709,7 @@ function keyPressed() {
     return false;
   }
 
-  if (key === "t" || key === "T") {
+  if ((key === "t" || key === "T") && window.location.hash === "#debug") {
     debugOpenFinalPoem();
     return false;
   }
@@ -2724,19 +2774,6 @@ function mouseWheel(event) {
 // - This does not interfere with the right-side HUD because we only
 //   activate movement when the touch begins inside the canvas rect.
 // --------------------------------------------------
-function touchToCanvasXY(t) {
-  if (!cnv || !cnv.elt) return { ok: false, x: 0, y: 0 };
-
-  const rect = cnv.elt.getBoundingClientRect();
-  const scaleX = CW / Math.max(1, rect.width);
-  const scaleY = CH / Math.max(1, rect.height);
-
-  return {
-    ok: true,
-    x: (t.clientX - rect.left) * scaleX,
-    y: (t.clientY - rect.top) * scaleY
-  };
-}
 
 function touchStarted() {
   armAudioIfNeeded();
@@ -2774,6 +2811,12 @@ function touchStarted() {
 
   // ACT POEM MODAL
   if (showActPoemModal) {
+    const contBtn = getActPoemContinueButtonRect();
+    if (contBtn && _ptInRect(p.x, p.y, contBtn)) {
+      closeActPoemModal();
+      return false;
+    }
+    // Tapping anywhere else on the modal also closes it
     closeActPoemModal();
     return false;
   }
@@ -2807,6 +2850,16 @@ function touchStarted() {
   const btn = getInteractButtonRect();
   if (_ptInRect(p.x, p.y, btn)) {
     tryInteract();
+    return false;
+  }
+
+  // Ping/door button
+  const pingBtn = getQPingButtonRect();
+  if (_ptInRect(p.x, p.y, pingBtn)) {
+    pulse.active = true;
+    pulse.r = 0;
+    pulse.hit = false;
+    sfxBlip(420, 0.001, 0.06, 0.30);
     return false;
   }
 
@@ -2877,12 +2930,13 @@ function touchEnded() {
 }
 
 function getZoomButtons() {
-  const size = 56;
-  const gap = 12;
-  const y = CH - size - 24;
+  const size = Math.max(52, Math.round(CH * 0.10));
+  const gap = Math.max(10, Math.round(CW * 0.015));
+  const margin = Math.max(14, Math.round(CW * 0.025));
+  const y = CH - size - margin;
   return {
-    minus: { x: 24, y, w: size, h: size },
-    plus:  { x: 24 + size + gap, y, w: size, h: size }
+    minus: { x: margin, y, w: size, h: size },
+    plus:  { x: margin + size + gap, y, w: size, h: size }
   };
 }
 
@@ -2890,16 +2944,17 @@ function drawFocusTouchButtons() {
   if (mode !== "focus" || showFinalModal) return;
 
   const { minus, plus } = getZoomButtons();
+  const fontSize = Math.max(22, Math.round(minus.h * 0.52));
 
   push();
   textAlign(CENTER, CENTER);
-  textSize(28);
+  textFont("VT323");
+  textSize(fontSize);
 
   for (const btn of [minus, plus]) {
-    fill(0, 0, 0, 95);
+    fill(0, 0, 0, 110);
     noStroke();
     rect(btn.x, btn.y, btn.w, btn.h, 8);
-
     stroke(0, 255, 170, 170);
     strokeWeight(2);
     noFill();
@@ -2907,48 +2962,10 @@ function drawFocusTouchButtons() {
   }
 
   noStroke();
-  fill(180, 255, 220, 235);
+  fill(180, 255, 220, 240);
   text("−", minus.x + minus.w / 2, minus.y + minus.h / 2 + 1);
-  text("+", plus.x + plus.w / 2, plus.y + plus.h / 2 + 1);
+  text("+", plus.x + plus.w / 2,  plus.y + plus.h / 2 + 1);
   pop();
-}
-
-function touchMoved() {
-  if (!touchMove.active || !touches || touches.length === 0) return false;
-
-  // Find the tracked touch (p5 uses .id, DOM Touch uses .identifier)
-  let t = null;
-  for (const tt of touches) {
-    const tid = (typeof tt.id !== "undefined") ? tt.id : (typeof tt.identifier !== "undefined" ? tt.identifier : 0);
-    if (tid === touchMove.id) { t = tt; break; }
-  }
-  if (!t) return false;
-
-  const p = touchToCanvasXY(t);
-  touchMove.x = p.x;
-  touchMove.y = p.y;
-  return false;
-}
-
-function touchEnded() {
-  // If no touches remain, release joystick
-  if (!touches || touches.length === 0) {
-    touchMove.active = false;
-    touchMove.id = null;
-    return false;
-  }
-
-  // If the tracked touch is gone, also release
-  let stillThere = false;
-  for (const tt of touches) {
-    const tid = (typeof tt.id !== "undefined") ? tt.id : (typeof tt.identifier !== "undefined" ? tt.identifier : 0);
-    if (tid === touchMove.id) { stillThere = true; break; }
-  }
-  if (!stillThere) {
-    touchMove.active = false;
-    touchMove.id = null;
-  }
-  return false;
 }
 
 function restartRun() {
@@ -3343,6 +3360,13 @@ function drawFocusMode() {
   drawFocusTouchButtons();
 }
 
+// Canvas-space rect for the act poem modal continue button (used by touchStarted)
+let _actPoemContinueBtnRect = null;
+
+function getActPoemContinueButtonRect() {
+  return _actPoemContinueBtnRect;
+}
+
 function drawActPoemModal() {
   noStroke();
   fill(0, 0, 0, 170);
@@ -3370,11 +3394,35 @@ function drawActPoemModal() {
 
   fill(0, 255, 170, 170);
   textSize(12 * S);
-  text("E / SPACE / X to continue", tx, ty + 28 * S);
+  text("Tap CONTINUE or press E / SPACE / X", tx, ty + 28 * S);
 
   fill(0, 255, 170, 235);
   textSize(15 * S);
-  text(actPoemText, tx, ty + 58 * S, panelW - pad * 2, panelH - 84 * S);
+  const bodyH = panelH - 120 * S;
+  text(actPoemText, tx, ty + 58 * S, panelW - pad * 2, bodyH);
+
+  // CONTINUE button for touch screens
+  const btnW = Math.max(140, Math.round(panelW * 0.36));
+  const btnH = Math.max(44, Math.round(40 * S));
+  const btnX = px + (panelW - btnW) * 0.5;
+  const btnY = py + panelH - btnH - pad;
+
+  _actPoemContinueBtnRect = { x: btnX, y: btnY, w: btnW, h: btnH };
+
+  fill(0, 0, 0, 120);
+  noStroke();
+  rect(btnX, btnY, btnW, btnH, 8);
+  stroke(0, 255, 170, 200);
+  strokeWeight(2);
+  noFill();
+  rect(btnX, btnY, btnW, btnH, 8);
+
+  noStroke();
+  fill(180, 255, 220, 245);
+  textAlign(CENTER, CENTER);
+  textFont("VT323");
+  textSize(Math.max(16, Math.round(btnH * 0.48)));
+  text("CONTINUE", btnX + btnW * 0.5, btnY + btnH * 0.52);
 }
 
 /* ==========================================================
@@ -3680,34 +3728,15 @@ function rebuildPoemDisplay() {
     return;
   }
 
-  const rand = mulberry32(runSeed);
-  const titleA = pickFrom(["A ROOM", "A PATTERN", "A SMALL LOOP", "A SOFT MACHINE"], rand);
-  const titleB = pickFrom(["LISTENS", "SHIMMERS", "REPEATS", "FORGETS", "LEAKS"], rand);
-
-  const nonDoorCount = history.filter(h => h !== "door").length;
-  const hasDoor = history.includes("door");
-  const need = Math.max(0, 2 - nonDoorCount);
-
-  let subtitle = "";
-  if (need > 0) subtitle = "Interact with " + need + " more object(s), then find the door.";
-  else if (!hasDoor) subtitle = "You have enough lines. Find the door to seal the poem.";
-  else subtitle = "Door visited. View it and press E to seal the final poem.";
-
-  const signalLine = (signal > 0)
-    ? ("SIGNAL " + signal + "/6: withheld words unlocked.")
-    : "No SIGNAL yet: SIG nodes are withheld words.";
+  // NOTE: promptEl HUD content for world/focus is handled solely by updateUI()
+  // to avoid the two systems overwriting each other. rebuildPoemDisplay only
+  // manages the poem strip (#poem) in world mode.
 
   const keep = 6;
   const recent = poemLog.slice(Math.max(0, poemLog.length - keep));
 
   const cursor = '<span class="cursor">█</span>';
   const focused = esc(heldLine || "") + cursor;
-
-  promptEl.innerHTML = [
-    `<div class="act-title">ACT 1</div>`,
-    `<div class="act-sub">${esc(subtitle)}</div>`,
-    `<div class="act-signal">${esc(signalLine)}</div>`
-  ].join("");
 
   poemEl.innerHTML = [
     ...recent.map(l => `<span>${esc(l)}</span>`),
@@ -3718,14 +3747,6 @@ function rebuildPoemDisplay() {
 /* ==========================================================
    FINAL POEM TITLE BUILDER
 ========================================================== */
-function getPoemLinesForFinal() {
-  const out = [];
-  for (const l of poemLog) out.push(l);
-  if (heldLine && heldLine.trim().length) out.push(heldLine);
-  for (const l of poemQueue) out.push(l);
-  return out;
-}
-
 function buildFinalPoemTitle() {
   const rand = mulberry32((runSeed ^ 0xDEADBEEF) >>> 0);
 
@@ -3900,7 +3921,7 @@ function updateControlsPanel() {
   if (showActPoemModal) {
     controlsContentEl.innerHTML = [
       `<div><span class="control-label">Read Aloud:</span> Space</div>`,
-      `<div><span class="control-label">Close:</span>  or E</div>`,
+      `<div><span class="control-label">Close:</span> X or E</div>`,
       `<div><span class="control-label">Restart:</span> R</div>`
     ].join("");
     return;
@@ -4670,78 +4691,5 @@ function musicAccent() {
 }
 
 /* ==========================================================
-   FOOTSTEPS (very light)
+   FOOTSTEPS - removed placeholder (was a no-op called every frame)
 ========================================================== */
-function updateFootsteps() { /* optional placeholder */ }
-
-/* ==========================================================
-   TTS
-========================================================== */
-function pickBestVoice() {
-  if (!window.speechSynthesis) return null;
-  const voices = speechSynthesis.getVoices ? speechSynthesis.getVoices() : [];
-  if (!voices || !voices.length) return null;
-
-  const preferred = voices.find(v => /en/i.test(v.lang || "") && /female|zira|samantha|victoria|karen|moira/i.test(v.name || ""));
-  if (preferred) return preferred;
-
-  const english = voices.find(v => /en/i.test(v.lang || ""));
-  return english || voices[0] || null;
-}
-
-function speakText(txt) {
-  if (!ttsEnabled || !window.speechSynthesis) return;
-  stopTTS();
-
-  const cleanText = String(txt || "")
-    .replace(/\s+([,.;:!?])/g, "$1")
-    .replace(/\n+/g, " ... ")
-    .replace(/\.{4,}/g, "...")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-
-  if (!cleanText) return;
-
-  const utterance = new SpeechSynthesisUtterance(cleanText);
-  const voice = pickBestVoice();
-  if (voice) utterance.voice = voice;
-  utterance.rate = 0.9;
-  utterance.pitch = 0.96;
-  utterance.volume = 1;
-  utterance.onend = () => {
-    speaking = false;
-    currentUtterance = null;
-  };
-  utterance.onerror = () => {
-    speaking = false;
-    currentUtterance = null;
-  };
-
-  currentUtterance = utterance;
-  speaking = true;
-  speechSynthesis.speak(utterance);
-}
-
-function speakPoetryCommons() {
-  if (!leaderboardEntries || !leaderboardEntries.length) {
-    speakText("Poetry Commons is empty right now.");
-    return;
-  }
-
-  const text = leaderboardEntries
-    .slice(0, 8)
-    .map((entry, index) => {
-      const title = String(entry.title || "Untitled Poem").trim();
-      const name = String(entry.name || "anonymous observer").trim();
-      const body = String(entry.text || "").trim()
-        .replace(/\n+/g, "... ")
-        .replace(/\s+\./g, ".")
-        .replace(/\s+,/g, ",");
-      return `Poem ${index + 1}. ${title}. By ${name}. ${body}`;
-    })
-    .join(" ... ");
-
-  if (text.length > 0) {
-    speakText(text);
-  }
-}
