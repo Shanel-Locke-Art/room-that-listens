@@ -50,7 +50,12 @@
         </div>
 
         <div class="howto-p">
-          <b>Act III</b> - Revisit the objects the room asks for, then return to the door to seal the final poem.
+          <b>Act III</b> - The room chooses a theme. Find the objects that belong to it.
+        </div>
+
+        <div class="panel-sub" id="howto-controls-title">CONTROLS</div>
+        <div id="howto-controls-body" class="howto-p">
+          <!-- Filled in by JS based on device type -->
         </div>
       </section>
     </aside>
@@ -62,7 +67,7 @@
   <div id="act-poem-modal" class="final-modal" aria-hidden="true">
   <div class="final-panel">
     <div class="final-head">
-      <div class="final-hint">SPACE: READ ALOUD OR STOP  |  X: CLOSE  |  E: STEP BACK INTO THE ROOM</div>
+      <div class="final-hint" id="act-poem-hint">SPACE: SKIP / READ ALOUD  |  X or E: CLOSE</div>
     </div>
 
     <div class="final-content final-content-single">
@@ -76,7 +81,7 @@
   <div id="final-modal" class="final-modal" aria-hidden="true">
     <div class="final-panel">
       <div class="final-head">
-        <div class="final-hint">SPACE: READ ALOUD OR STOP  |  X: CLOSE  |  E: STEP BACK INTO THE ROOM  |  R: START A NEW POEM</div>
+        <div class="final-hint" id="final-modal-hint">SPACE: READ ALOUD OR STOP  |  X: CLOSE  |  E: STEP BACK INTO THE ROOM  |  R: START A NEW POEM</div>
       </div>
 
       <div class="final-content">
@@ -125,5 +130,62 @@
   <script src="./lib/p5.min.js"></script>
   <script src="./lib/p5.sound.min.js"></script>
   <script src="./sketch_poetry_commons.js"></script>
+
+  <script>
+  // Populate device-aware content once the DOM and sketch are both ready.
+  // Runs after p5 setup() has detected touch capability.
+  (function() {
+    const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+
+    // How to Play controls section
+    const howtoBody = document.getElementById('howto-controls-body');
+    if (howtoBody) {
+      howtoBody.innerHTML = isTouch
+        ? '<b>Move:</b> Drag anywhere on the game canvas.<br>' +
+          '<b>Interact:</b> Tap the INTERACT button (bottom-right).<br>' +
+          '<b>Find Door:</b> Tap PING DOOR to reveal a trail.<br>' +
+          '<b>Zoom:</b> Use + / − buttons in Focus View.<br>' +
+          '<b>Close / Continue:</b> Tap the on-screen button.'
+        : '<b>Move:</b> WASD or Arrow keys.<br>' +
+          '<b>Interact:</b> E key.<br>' +
+          '<b>Find Door:</b> Q to send a pulse.<br>' +
+          '<b>Zoom:</b> Mouse wheel in Focus View.<br>' +
+          '<b>Close:</b> X key.  <b>Restart:</b> R key.';
+    }
+
+    // Modal hint bars
+    const actHint = document.getElementById('act-poem-hint');
+    if (actHint) {
+      actHint.textContent = isTouch
+        ? 'TAP TO SKIP  |  TAP AGAIN TO CONTINUE'
+        : 'SPACE: SKIP / READ ALOUD  |  X or E: CLOSE';
+    }
+
+    const finalHint = document.getElementById('final-modal-hint');
+    if (finalHint) {
+      finalHint.textContent = isTouch
+        ? 'TAP X TO CLOSE  |  TAP RESTART FOR A NEW POEM'
+        : 'SPACE: READ ALOUD OR STOP  |  X: CLOSE  |  E: STEP BACK INTO THE ROOM  |  R: START A NEW POEM';
+    }
+
+    // If input mode switches during play (e.g. keyboard plugged in),
+    // re-run the hint update so the panel stays accurate.
+    document.addEventListener('keydown', function onFirstKey() {
+      const actH = document.getElementById('act-poem-hint');
+      const finH = document.getElementById('final-modal-hint');
+      if (actH) actH.textContent = 'SPACE: SKIP / READ ALOUD  |  X or E: CLOSE';
+      if (finH) finH.textContent = 'SPACE: READ ALOUD OR STOP  |  X: CLOSE  |  E: STEP BACK INTO THE ROOM  |  R: START A NEW POEM';
+      const hw = document.getElementById('howto-controls-body');
+      if (hw) {
+        hw.innerHTML = '<b>Move:</b> WASD or Arrow keys.<br>' +
+          '<b>Interact:</b> E key.<br>' +
+          '<b>Find Door:</b> Q to send a pulse.<br>' +
+          '<b>Zoom:</b> Mouse wheel in Focus View.<br>' +
+          '<b>Close:</b> X key.  <b>Restart:</b> R key.';
+      }
+      document.removeEventListener('keydown', onFirstKey);
+    }, { once: true });
+  })();
+  </script>
 </body>
 </html>

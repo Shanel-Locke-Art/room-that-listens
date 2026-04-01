@@ -1,25 +1,3 @@
-/* ==========================================================
-   A SMALL LOOP LEAKS - sketch.js (CLEAN REWRITE)
-
-   This rewrite removes duplicate function declarations and fixes:
-   - act variable declared once
-   - focus view zoom applies to the inspected sprite
-   - mouseWheel zoom works reliably in focus mode
-   - hiddenAction + getHiddenFocusCard signatures match
-   - setup() initialization only runs once
-   - chunky pixel-art sprites with light animation (procedural)
-
-   Folder structure (do not rename):
-   /index.html
-   /style.css
-   /sketch.js
-   /lib/p5.min.js
-   /lib/p5.sound.min.js
-   /shaders/passthrough.vert
-   /shaders/mandelbrot.frag
-   /shaders/filter.frag
-========================================================== */
-
 /* =========================
    CONFIG: paths
 ========================= */
@@ -176,6 +154,7 @@ let act2Progress = 0;
 // Act 3 revision tracking
 let act3TargetIds = [];
 let act3Touched = new Set();
+let act3Theme = null;  // set by pickAct3Theme() at startAct3()
 
 /* =========================
    SIGNAL + DOOR GUIDANCE
@@ -358,6 +337,158 @@ const LINES = {
 
 };
 
+/* =========================
+   ACT 3 THEMES
+   Each theme defines: item cluster, bg palette, sprite tint color,
+   music parameters, HUD voice lines, and revisit poem lines.
+========================= */
+const ACT3_THEMES = {
+
+  light: {
+    name: "LIGHT",
+    bannerSub: "EVERYTHING THAT GLOWS IS ALMOST GONE",
+    items: ["lamp", "candle", "lens", "mirror"],
+    // bg: deep warm amber dark
+    bgR: 18, bgG: 10, bgB: 0,
+    // sprite ON color for target items: warm amber
+    spriteR: 255, spriteG: 200, spriteB: 60,
+    // scanline tint
+    scanR: 255, scanG: 180, scanB: 40,
+    // fractal tint when rendering in world
+    tintR: 255, tintG: 200, tintB: 100, tintA: 180,
+    // music: slow, sine, whole-tone, root D4
+    music: {
+      waveform: "sine",
+      root: 293.66,       // D4
+      scale: [0, 2, 4, 6, 8, 10],   // whole-tone
+      bassPattern: [0,0,0,0, 2,2,0,0, 4,4,2,2, 0,0,6,6],
+      bpmBase: 44,
+      bpmRange: 8,        // barely responds to movement
+      reverbTime: 2.4,
+      delayTime: 0.18,
+      filterBase: 900,
+      filterRange: 400,
+    },
+    // HUD prompt voice
+    hudTheme: "The room is thinking about light.",
+    hudRemaining: (names) => `Find what still glows: ${names}.`,
+    hudDone: "The light has been gathered. Return to the door.",
+    // poem lines for each revisit
+    revisitLines: [
+      "{item} gives off a light it has been holding all along.",
+      "Something warm shifts when you look at {item} again.",
+      "The glow around {item} changes color now that you came back.",
+      "You and {item} have both been waiting for the dark to notice.",
+      "{item} remembers the first time it was seen.",
+    ],
+  },
+
+  time: {
+    name: "TIME",
+    bannerSub: "THE ROOM HAS BEEN COUNTING",
+    items: ["clock", "radio", "stone", "map"],
+    bgR: 6, bgG: 0, bgB: 20,
+    spriteR: 120, spriteG: 160, spriteB: 255,
+    scanR: 80, scanG: 100, scanB: 255,
+    tintR: 100, tintG: 140, tintB: 255, tintA: 180,
+    music: {
+      waveform: "sawtooth",
+      root: 110,           // A2
+      scale: [0, 1, 3, 5, 7, 8, 10],  // Phrygian
+      bassPattern: [0,0,1,0, 3,3,0,1, 5,5,3,0, 0,1,0,0],
+      bpmBase: 60,
+      bpmRange: 6,
+      reverbTime: 1.6,
+      delayTime: 0.25,
+      filterBase: 700,
+      filterRange: 600,
+    },
+    hudTheme: "The room is thinking about time.",
+    hudRemaining: (names) => `Find what measures or waits: ${names}.`,
+    hudDone: "Time has been accounted for. Return to the door.",
+    revisitLines: [
+      "{item} has been running since before you arrived.",
+      "The interval between now and before collapses at {item}.",
+      "Something in {item} ticks differently when you return.",
+      "{item} marks your presence like a small wound in the clock face.",
+      "You were here. Now you are here again. {item} counts both.",
+    ],
+  },
+
+  memory: {
+    name: "MEMORY",
+    bannerSub: "SOMETHING HERE ALREADY KNEW YOU",
+    items: ["feather", "shell", "ribbon", "glove"],
+    bgR: 18, bgG: 0, bgB: 8,
+    spriteR: 255, spriteG: 120, spriteB: 180,
+    scanR: 220, scanG: 80, scanB: 140,
+    tintR: 255, tintG: 100, tintB: 160, tintA: 170,
+    music: {
+      waveform: "triangle",
+      root: 185,           // F#3
+      scale: [0, 2, 3, 5, 7, 8, 10],  // natural minor
+      bassPattern: [0,0,0,0, 3,3,0,0, 7,7,3,0, 0,0,0,3],
+      bpmBase: 38,
+      bpmRange: 5,
+      reverbTime: 3.2,
+      delayTime: 0.14,
+      filterBase: 600,
+      filterRange: 300,
+    },
+    hudTheme: "The room is thinking about memory.",
+    hudRemaining: (names) => `Find what was left behind: ${names}.`,
+    hudDone: "The memories are with you now. Return to the door.",
+    revisitLines: [
+      "{item} holds the shape of something that did not want to be forgotten.",
+      "You recognize {item}. That is enough to change it.",
+      "{item} softens slightly when you return.",
+      "There is a version of you in {item} that stayed.",
+      "{item} was waiting for this second visit to mean something.",
+    ],
+  },
+
+  edge: {
+    name: "EDGE",
+    bannerSub: "THE ROOM IS ALMOST FINISHED WITH YOU",
+    items: ["needle", "key", "chalk", "coin"],
+    bgR: 0, bgG: 20, bgB: 12,
+    spriteR: 220, spriteG: 255, spriteB: 200,
+    scanR: 180, scanG: 255, scanB: 160,
+    tintR: 160, tintG: 255, tintB: 180, tintA: 220,
+    music: {
+      waveform: "square",
+      root: 261.63,        // C4
+      scale: [0, 3, 6, 9],             // diminished
+      bassPattern: [0,0,3,0, 6,6,3,0, 9,9,6,3, 0,3,0,6],
+      bpmBase: 92,
+      bpmRange: 22,
+      reverbTime: 0.8,
+      delayTime: 0.08,
+      filterBase: 2200,
+      filterRange: 1800,
+    },
+    hudTheme: "The room is thinking about edges.",
+    hudRemaining: (names) => `Find what cuts or decides: ${names}.`,
+    hudDone: "The edges are accounted for. Return to the door.",
+    revisitLines: [
+      "{item} is sharper now that you have seen what it leads to.",
+      "You return to {item}. It was always going to end here.",
+      "{item} catches the light differently when the poem is almost done.",
+      "Something final clicks into place at {item}.",
+      "{item} has been pointing at this moment since the beginning.",
+    ],
+  },
+
+};
+
+const ACT3_THEME_KEYS = Object.keys(ACT3_THEMES);
+
+function pickAct3Theme() {
+  const rand = mulberry32((runSeed ^ 0x7483E5) >>> 0);
+  const key = ACT3_THEME_KEYS[Math.floor(rand() * ACT3_THEME_KEYS.length)];
+  act3Theme = ACT3_THEMES[key];
+}
+
 const ITEM_POEM_LINES = new Set(
   Object.entries(LINES)
     .filter(([key]) => key !== "door" && key !== "hidden")
@@ -436,6 +567,25 @@ let actPoems = { 1: [], 2: [], 3: [] };
 let showActPoemModal = false;
 let actPoemTitle = "";
 let actPoemText = "";
+let actPoemOnClose = null;  // optional callback fired when the modal is closed
+
+// Act poem modal typewriter state
+let actTW = {
+  lines: [],          // full lines to type out
+  lineIdx: 0,         // which line we're on
+  charIdx: 0,         // how far through current line
+  displayed: [],       // lines fully typed so far (strings)
+  partial: "",        // current in-progress line text
+  tickMs: 38,         // ms per character
+  lastTick: 0,
+  done: false,        // true once all lines are typed
+  // "rethink" state -- machine deletes and retypes a word
+  rethinking: false,
+  rethinkDeleteCount: 0,
+  rethinkPauseUntil: 0,
+  rethinkReplacement: "",
+  rethinkOrigPos: 0,
+};
 
 const LEADERBOARD_CONFIG = {
   endpoint: "https://script.google.com/macros/s/AKfycbw9M02gUSnCAQOs2uAT87LSzqGR23vAlbamKKwzMBV9kp-mUnVwoayz5IHJLqiHv8mx5A/exec",
@@ -482,9 +632,173 @@ function buildActPoemSnapshot() {
   return [stanza1, stanza2, stanza3].filter(Boolean).join("\n\n");
 }
 
-function openActPoemModal(title, text) {
-  actPoemTitle = title;
-  actPoemText = text;
+// Word substitutions the machine "tries then corrects" during typing.
+// Each entry: [wrongWord, rightWord] -- machine types wrongWord then backs up and fixes it.
+const RETHINK_SUBS = [
+  ["forgetting",  "remembering"],
+  ["silence",     "signal"],
+  ["ends",        "continues"],
+  ["breaks",      "holds"],
+  ["ordinary",    "strange"],
+  ["nothing",     "something"],
+  ["closes",      "opens"],
+  ["cold",        "quiet"],
+  ["empty",       "full"],
+  ["stops",       "shifts"],
+  ["forgets",     "keeps"],
+  ["dark",        "lit"],
+];
+
+// Chance (0-1) the machine rethinks a word when it finishes typing one
+const RETHINK_CHANCE = 0.13;
+
+function actTWReset(text) {
+  const raw = String(text || "").trim();
+  actTW.lines    = raw.length ? raw.split("\n") : [];
+  actTW.lineIdx  = 0;
+  actTW.charIdx  = 0;
+  actTW.displayed = [];
+  actTW.partial  = "";
+  actTW.done     = false;
+  actTW.lastTick = 0;
+  actTW.rethinking = false;
+  actTW.rethinkDeleteCount = 0;
+  actTW.rethinkPauseUntil  = 0;
+  actTW.rethinkReplacement = "";
+  actTW.rethinkOrigPos     = 0;
+}
+
+function actTWUpdate() {
+  if (!showActPoemModal || actTW.done) return;
+
+  const now = performance.now();
+  if (now < actTW.rethinkPauseUntil) return;
+
+  // --- Rethink delete phase ---
+  if (actTW.rethinking) {
+    if (actTW.rethinkDeleteCount > 0) {
+      // Delete one character at a time, slower than typing
+      if (now - actTW.lastTick < actTW.tickMs * 1.6) return;
+      actTW.lastTick = now;
+      actTW.partial = actTW.partial.slice(0, -1);
+      actTW.rethinkDeleteCount--;
+      sfxBlip && sfxBlip(280, 0.001, 0.015, 0.05);
+      actTWRender();
+      return;
+    } else {
+      // Done deleting -- now type the replacement
+      const remaining = actTW.rethinkReplacement.slice(
+        actTW.partial.length - actTW.rethinkOrigPos
+      );
+      // Inject replacement characters into the stream
+      actTW.rethinking = false;
+      // Rebuild the current line from partial + replacement + rest
+      const currentLine = actTW.lines[actTW.lineIdx];
+      const afterOrig = currentLine.slice(actTW.charIdx);
+      actTW.lines[actTW.lineIdx] =
+        actTW.partial + actTW.rethinkReplacement + afterOrig;
+      actTW.charIdx = actTW.partial.length + actTW.rethinkReplacement.length;
+      // Small pause before continuing
+      actTW.rethinkPauseUntil = now + 120;
+      return;
+    }
+  }
+
+  // --- Normal typing ---
+  if (now - actTW.lastTick < actTW.tickMs) return;
+  actTW.lastTick = now;
+
+  if (actTW.lineIdx >= actTW.lines.length) {
+    actTW.done = true;
+    actTWRender();
+    return;
+  }
+
+  const currentLine = actTW.lines[actTW.lineIdx];
+
+  if (actTW.charIdx < currentLine.length) {
+    const ch = currentLine[actTW.charIdx];
+    actTW.partial += ch;
+    actTW.charIdx++;
+
+    // Play a soft blip on every 3rd character
+    if (audioArmed && actTW.charIdx % 3 === 0) {
+      const f = 380 + (actTW.charIdx % 11) * 14;
+      sfxBlip(f, 0.001, 0.018, 0.07);
+    }
+
+    // Check for rethink opportunity when we just finished a word
+    if (ch === " " && !actTW.rethinking && Math.random() < RETHINK_CHANCE) {
+      // Look for a substitution match ending just before the space
+      const wordsTyped = actTW.partial.trimEnd().split(/\s+/);
+      const lastWord = wordsTyped[wordsTyped.length - 1].toLowerCase().replace(/[^a-z]/g, "");
+      const sub = RETHINK_SUBS.find(([wrong]) => wrong === lastWord);
+      if (sub) {
+        const [wrong, right] = sub;
+        // Pause briefly, then delete the word and retype
+        actTW.rethinkPauseUntil  = performance.now() + 260;
+        actTW.rethinkDeleteCount = wrong.length;
+        actTW.rethinkReplacement = right;
+        actTW.rethinkOrigPos     = actTW.partial.trimEnd().length - wrong.length;
+        // Trim the trailing space before deleting
+        actTW.partial = actTW.partial.trimEnd();
+        actTW.rethinking = true;
+      }
+    }
+
+  } else {
+    // Line complete -- commit it
+    actTW.displayed.push(actTW.partial);
+    actTW.partial  = "";
+    actTW.charIdx  = 0;
+    actTW.lineIdx++;
+    // Slightly longer pause between lines
+    actTW.rethinkPauseUntil = performance.now() + 180;
+  }
+
+  actTWRender();
+}
+
+function actTWRender() {
+  if (!actPoemBodyEl) return;
+
+  const cursor = actTW.done ? "" : '<span class="tw-cursor">█</span>';
+  // Join with empty string -- no \n between spans, so the pre element
+  // doesn't render extra blank lines between each block span
+  const committedHtml = actTW.displayed
+    .map(l => `<span class="tw-done">${escHtml(l)}</span>`)
+    .join("");
+  const partialHtml = actTW.partial.length || !actTW.done
+    ? `<span class="tw-active">${escHtml(actTW.partial)}${cursor}</span>`
+    : "";
+
+  actPoemBodyEl.innerHTML = committedHtml + partialHtml;
+  actPoemBodyEl.scrollTop = actPoemBodyEl.scrollHeight;
+}
+
+function escHtml(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function actTWSkipToEnd() {
+  // Jump instantly to completed state (player pressed CONTINUE before it finished)
+  if (actTW.lines.length) {
+    actTW.displayed = [...actTW.lines];
+  }
+  actTW.partial  = "";
+  actTW.lineIdx  = actTW.lines.length;
+  actTW.done     = true;
+  actTW.rethinking = false;
+  actTWRender();
+}
+
+function openActPoemModal(title, text, onClose) {
+  actPoemTitle  = title;
+  actPoemText   = text;
+  actPoemOnClose = onClose || null;
   showActPoemModal = true;
   paused = true;
 
@@ -492,10 +806,12 @@ function openActPoemModal(title, text) {
     actPoemTitleEl.textContent = actPoemTitle;
   }
 
+  // Start typewriter -- clear the body and let actTWUpdate fill it in
   if (actPoemBodyEl) {
-    actPoemBodyEl.innerText = actPoemText;
+    actPoemBodyEl.innerHTML = "";
     actPoemBodyEl.scrollTop = 0;
   }
+  actTWReset(actPoemText);
 
   if (actPoemModalEl) {
     actPoemModalEl.classList.add("is-open");
@@ -513,9 +829,11 @@ function sfxPageTurn() {
 
 function closeActPoemModal() {
   sfxPageTurn();
+  stopTTS();
 
   showActPoemModal = false;
   paused = false;
+  actTWReset("");
 
   if (actPoemModalEl) {
     actPoemModalEl.classList.remove("is-open");
@@ -523,6 +841,11 @@ function closeActPoemModal() {
   }
 
   if (cnv && cnv.elt) cnv.elt.focus();
+
+  // Fire the deferred transition callback (act change, music shift, etc.)
+  const cb = actPoemOnClose;
+  actPoemOnClose = null;
+  if (typeof cb === "function") cb();
 }
 
 /* =========================
@@ -544,16 +867,23 @@ let envNoise = null;
 // procedural music
 let musicOn = true;
 let music = {
-  bpmBase: 72,
-  bpm: 72,
-  stepMs: 120,
+  bpmBase: 108,
+  bpm: 108,
   lastStepAt: 0,
   step: 0,
+  bar: 0,
+  phrase: 0,
   speedSmoothed: 0,
+  _energySmoothed: 0,
+  _act3WaveSet: null,
+  _melodyStep: 0,
+  _lastArpAt: 0,
+  _arpStep: 0,
 
   lead: null,
   bass: null,
-  hat: null,
+  hatOsc: null,
+  arp: null,
 
   filter: null,
   reverb: null,
@@ -580,25 +910,44 @@ function pickBestVoice() {
   return english || voices[0] || null;
 }
 
+function cleanTextForSpeech(rawText) {
+  return String(rawText || "")
+    // Strip Roman numerals used as stanza labels (I, II, III etc.) so TTS
+    // doesn't say "eye" or "eye eye" -- replace with ordinal word
+    .replace(/\bStanza I\b/gi,   "Stanza One")
+    .replace(/\bStanza II\b/gi,  "Stanza Two")
+    .replace(/\bStanza III\b/gi, "Stanza Three")
+    // Strip all trailing periods on every line (the main TTS "period" culprit)
+    .replace(/\.[ \t]*$/gm, "")
+    // Any remaining period-then-space becomes a natural comma-pause
+    .replace(/\.\s+/g, ", ")
+    // Remaining isolated periods (end of string, before newline)
+    .replace(/\./g, "")
+    // Collapse ellipses to a spoken pause
+    .replace(/…|\.{2,}/g, " ... ")
+    // Blank lines → longer pause
+    .replace(/\n[ \t]*\n/g, " ... ")
+    // Single newlines → slight pause
+    .replace(/\n/g, ", ")
+    // Clean up punctuation spacing artifacts
+    .replace(/\s+([,;:!?])/g, "$1")
+    .replace(/,\s*,/g, ",")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 function speakText(rawText) {
   if (!ttsEnabled || !window.speechSynthesis) return;
   stopTTS();
 
-  // Clean text for natural speech delivery
-  const cleanText = String(rawText || "")
-    .replace(/\s+([,.;:!?])/g, "$1")
-    .replace(/\n+/g, " ... ")
-    .replace(/\.{4,}/g, "...")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-
+  const cleanText = cleanTextForSpeech(rawText);
   if (!cleanText) return;
 
   currentUtterance = new SpeechSynthesisUtterance(cleanText);
   const voice = pickBestVoice();
   if (voice) currentUtterance.voice = voice;
-  currentUtterance.rate = 0.9;
-  currentUtterance.pitch = 0.96;
+  currentUtterance.rate  = 0.82;   // slightly slower than before -- poetry needs room
+  currentUtterance.pitch = 0.94;
   currentUtterance.volume = 1;
 
   currentUtterance.onend = () => {
@@ -668,24 +1017,17 @@ function toggleFinalSpeech() {
   }
 
   const titleEl = document.getElementById("final-title");
-  const bodyEl = document.getElementById("final-body");
-
+  const bodyEl  = document.getElementById("final-body");
   if (!bodyEl) return;
 
-  let title = titleEl ? titleEl.textContent : "";
-  let body = bodyEl.textContent;
+  const title = titleEl ? titleEl.textContent.trim() : "";
+  const body  = bodyEl.textContent.trim();
+  const combined = title ? title + ". " + body : body;
 
-  body = body.replace(/\s+\./g, ".");
-  body = body.replace(/\s+,/g, ",");
-  body = body.replace(/\n+/g, "... ");
-  body = body.replace(/\.{4,}/g, "...");
-
-  const text = (title + ". " + body).trim();
-
-  if (text.length > 0) {
+  if (combined.length > 0) {
     finalSpeechFinished = false;
     setPoetryCommonsEnabled(false);
-    speakText(text);
+    speakText(combined);
   }
 }
 
@@ -785,6 +1127,12 @@ function setup() {
   hydratePoetName();
   renderLeaderboard();
 
+  // Auto-detect touch device before any interaction fires
+  if (typeof window !== "undefined" &&
+      ("ontouchstart" in window || (window.navigator && window.navigator.maxTouchPoints > 0))) {
+    _inputMode = "touch";
+  }
+
   computeCanvasSize();
 
   cnv = createCanvas(CW, CH);
@@ -843,6 +1191,7 @@ function windowResized() {
     // Clear cached graphics that embed the old canvas dimensions
     hiddenFocusCache.clear();
     itemSpriteCache.clear();
+    itemFrameCache.clear();
     createBuffersAndShaders();
   }, 180);
 }
@@ -1000,30 +1349,47 @@ function nearestAvailableSig() {
 }
 
 function pickAct3Targets() {
-  const touched = [];
-  const seen = new Set();
-  for (const id of history) {
-    if (!id || id === "door" || id === "hidden") continue;
-    if (seen.has(id)) continue;
-    seen.add(id);
-    if (getStationById(id)) touched.push(id);
-  }
-  const pool = touched.length ? touched : getCalibrationCandidates();
+  // Pull candidates from the active theme's item cluster.
+  // Only include items that actually exist as stations in this run.
+  const themeItems = act3Theme ? act3Theme.items : [];
+  const inRoom = themeItems.filter(id => getStationById(id));
+
+  // Fall back to any non-door interactable if the theme cluster is sparse
+  const pool = inRoom.length >= 2
+    ? inRoom
+    : getCalibrationCandidates();
+
   const rand = mulberry32((runSeed ^ 0xA37A37) >>> 0);
   const copy = [...pool];
   for (let i = copy.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
     [copy[i], copy[j]] = [copy[j], copy[i]];
   }
+  // Pick up to 3, but at least 2 if pool allows
   act3TargetIds = copy.slice(0, Math.min(3, copy.length));
 }
+
+const ACT3_REVISIT_LINES = [
+  "You return to {item}. The line changes because you came back.",
+  "{item} remembers being chosen once. It shifts.",
+  "A second visit rewrites what the first one meant.",
+  "You were here before. The room adjusts.",
+  "{item} offers a different word this time.",
+  "The poem bends slightly where you stand again."
+];
 
 function markAct3Touch(id) {
   if (act !== 3) return;
   if (!act3TargetIds.includes(id)) return;
   if (act3Touched.has(id)) return;
   act3Touched.add(id);
-  queuePoemLine("You return to " + formatItemName(id) + ". The line changes because you came back.");
+  clearItemFrameCache();  // force sprite recolor to "done" state immediately
+
+  const lines = act3Theme ? act3Theme.revisitLines : ACT3_REVISIT_LINES;
+  const rand = mulberry32((runSeed ^ idHash(id) ^ (act3Touched.size * 0xBEEF)) >>> 0);
+  const template = lines[Math.floor(rand() * lines.length)];
+  const line = template.replace("{item}", formatItemName(id));
+  queuePoemLine(line);
 }
 
 function getNextAct3Target() {
@@ -1038,51 +1404,101 @@ function canEnterAct3Door() {
   return act === 3 && act3TargetIds.length > 0 && act3TargetIds.every(id => act3Touched.has(id));
 }
 
+function buildStanzaSnapshot(actNumbers) {
+  // Build a poem snapshot from specific act buckets, independent of current act value.
+  const stanzas = actNumbers
+    .map(n => cleanActLines(actPoems[n]).join("\n"))
+    .filter(Boolean);
+  return stanzas.join("\n\n");
+}
+
 function startAct2() {
-  act = 2;
-  actBannerFrames = 180;
+  // Show stanza 1 (Act 1 lines), then transition to Act 2 on close.
+  const snapshot = buildStanzaSnapshot([1]);
+  openActPoemModal("Stanza 1", snapshot, () => {
+    act = 2;
+    actBannerFrames = 180;
 
-  act2SigCollected = 0;
-  act2Calibrated = false;
-  act2Seq = [];
-  act2TargetSeq = [];
-  act2Progress = 0;
+    act2SigCollected = 0;
+    act2Calibrated   = false;
+    act2Seq          = [];
+    act2TargetSeq    = [];
+    act2Progress     = 0;
 
-  pickAct2TargetSeq();
+    pickAct2TargetSeq();
+    mutateRoom();
 
-  mutateRoom();
-  queuePoemLine("The room shifts. It was listening.");
-  queuePoemLine("Set the sequence: " + formatSequence(act2TargetSeq) + ".");
-  sfxDoorRumble();
-
-  openActPoemModal("Stanza I", buildActPoemSnapshot());
+    queuePoemLine("The room shifts. It was listening.");
+    queuePoemLine("Set the sequence: " + formatSequence(act2TargetSeq) + ".");
+    sfxDoorRumble();
+  });
 }
 
 function startAct3() {
-  act = 3;
-  actBannerFrames = 180;
-  act3Touched = new Set();
-  pickAct3Targets();
-  queuePoemLine("The machine stops observing. It asks you to return.");
-  if (act3TargetIds.length) {
-    queuePoemLine("Revisit: " + formatSequence(act3TargetIds) + ". Then return to the door.");
-  }
-  sfxDoorRumble();
+  // Show stanzas 1+2 (Act 1 + Act 2 lines), then transition to Act 3 on close.
+  const snapshot = buildStanzaSnapshot([1, 2]);
+  openActPoemModal("Stanza 2", snapshot, () => {
+    act = 3;
+    actBannerFrames = 180;
+    act3Touched = new Set();
 
-  openActPoemModal("Stanza II", buildActPoemSnapshot());
+    pickAct3Theme();
+    pickAct3Targets();
+
+    const theme = act3Theme;
+    queuePoemLine("The room stops. It has been thinking about something.");
+    queuePoemLine(theme.hudTheme + " Find what belongs to it.");
+    if (act3TargetIds.length) {
+      queuePoemLine(theme.hudRemaining(formatSequence(act3TargetIds)));
+    }
+    sfxDoorRumble();
+  });
+}
+
+/* =========================
+   INPUT MODE DETECTION
+========================= */
+// Set to true the first time a touch event fires, false when a mouse/keyboard
+// event fires. Drives all control-prompt text across the UI.
+let _inputMode = "unknown";  // "touch" | "keyboard" | "unknown"
+
+function setInputMode(mode) {
+  if (_inputMode === mode) return;
+  _inputMode = mode;
+  // Force a controls panel refresh so labels update immediately
+  updateControlsPanel();
+}
+
+function isTouchInput() {
+  return _inputMode === "touch";
 }
 
 function touchToCanvasXY(t) {
   if (!cnv || !cnv.elt) return { ok: false, x: 0, y: 0 };
 
+  // p5.js normalises touch objects so they have .x and .y already in
+  // canvas-pixel coordinates (accounting for pixelDensity and canvas position).
+  // Raw DOM Touch objects (from addEventListener) have .clientX / .clientY instead.
+  // We must handle both because p5 sometimes passes one, sometimes the other.
+  if (typeof t.x === "number" && typeof t.y === "number") {
+    // p5 touch object -- coords are already canvas-space
+    return { ok: true, x: t.x, y: t.y };
+  }
+
+  // Raw DOM touch -- convert from page coords to canvas coords
+  const clientX = (typeof t.clientX === "number") ? t.clientX : 0;
+  const clientY = (typeof t.clientY === "number") ? t.clientY : 0;
+
   const rect = cnv.elt.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return { ok: false, x: 0, y: 0 };
+
   const scaleX = CW / rect.width;
   const scaleY = CH / rect.height;
 
   return {
     ok: true,
-    x: (t.clientX - rect.left) * scaleX,
-    y: (t.clientY - rect.top) * scaleY
+    x: (clientX - rect.left) * scaleX,
+    y: (clientY - rect.top)  * scaleY
   };
 }
 
@@ -1097,8 +1513,11 @@ function resetRun(startInMenu = false) {
   finalPoemText = "";
 
   showActPoemModal = false;
-  actPoemTitle = "";
-  actPoemText = "";
+  actPoemTitle  = "";
+  actPoemText   = "";
+  actPoemOnClose = null;
+  actTWReset("");
+  finalTWReset("");
 
   mode = startInMenu ? "menu" : "world";
   focusId = null;
@@ -1116,8 +1535,8 @@ function resetRun(startInMenu = false) {
   act2TargetSeq = [];
   act3TargetIds = [];
   act3Touched = new Set();
-
-  act2SigCollected = 0;
+  act3Theme = null;
+  if (music) music._act3WaveSet = null;
   act2Calibrated = false;
   act2Progress = 0;
 
@@ -1159,7 +1578,11 @@ function resetRun(startInMenu = false) {
     queuePoemLine("You and the machine co-write a poem by moving through it.");
     queuePoemLine("Interact with 2 objects, then the door. The order becomes the poem.");
     queuePoemLine("Hidden SIG nodes are withheld words. Find them to deepen SIGNAL.");
-    queuePoemLine("Controls: WASD or arrows move. E interact. Q ping door. X close. R restart.");
+    if (isTouchInput()) {
+      queuePoemLine("Drag to move. Tap INTERACT to touch objects. Tap PING DOOR to locate it.");
+    } else {
+      queuePoemLine("Controls: WASD or arrows move. E interact. Q ping door. X close. R restart.");
+    }
   }
 
   if (cnv && cnv.elt) cnv.elt.focus();
@@ -1474,6 +1897,8 @@ function updateCreditsTypewriter() {
 ========================================================== */
 function draw() {
   updateTypewriter();
+  actTWUpdate();       // drive the act poem modal typewriter
+  finalTWUpdate();     // drive the final poem typewriter
   rebuildPoemDisplay();
 
   if (mode === "boot") {
@@ -1522,9 +1947,155 @@ function draw() {
   updateUI();
 }
 
+// Final poem typewriter state (separate from act poem typewriter)
+let finalTW = {
+  lines: [], lineIdx: 0, charIdx: 0,
+  displayed: [], partial: "", tickMs: 52,
+  lastTick: 0, done: false,
+  rethinking: false, rethinkDeleteCount: 0,
+  rethinkPauseUntil: 0, rethinkReplacement: "",
+  rethinkOrigPos: 0,
+};
+
+function finalTWReset(text) {
+  const raw = String(text || "").trim();
+  finalTW.lines    = raw.length ? raw.split("\n") : [];
+  finalTW.lineIdx  = 0;
+  finalTW.charIdx  = 0;
+  finalTW.displayed = [];
+  finalTW.partial  = "";
+  finalTW.done     = false;
+  finalTW.lastTick = 0;
+  finalTW.rethinking = false;
+  finalTW.rethinkDeleteCount = 0;
+  finalTW.rethinkPauseUntil  = 0;
+  finalTW.rethinkReplacement = "";
+  finalTW.rethinkOrigPos     = 0;
+}
+
+function finalTWUpdate() {
+  if (!showFinalModal || finalTW.done || !finalBodyEl) return;
+  const now = performance.now();
+  if (now < finalTW.rethinkPauseUntil) return;
+
+  if (finalTW.rethinking) {
+    if (finalTW.rethinkDeleteCount > 0) {
+      if (now - finalTW.lastTick < finalTW.tickMs * 1.5) return;
+      finalTW.lastTick = now;
+      finalTW.partial = finalTW.partial.slice(0, -1);
+      finalTW.rethinkDeleteCount--;
+      finalTWRender();
+      return;
+    } else {
+      finalTW.rethinking = false;
+      const currentLine = finalTW.lines[finalTW.lineIdx];
+      const afterOrig = currentLine.slice(finalTW.charIdx);
+      finalTW.lines[finalTW.lineIdx] =
+        finalTW.partial + finalTW.rethinkReplacement + afterOrig;
+      finalTW.charIdx = finalTW.partial.length + finalTW.rethinkReplacement.length;
+      finalTW.rethinkPauseUntil = now + 100;
+      return;
+    }
+  }
+
+  if (now - finalTW.lastTick < finalTW.tickMs) return;
+  finalTW.lastTick = now;
+
+  if (finalTW.lineIdx >= finalTW.lines.length) {
+    finalTW.done = true;
+    finalTWRender();
+    // Begin autoplay TTS once typing is done
+    if (finalSpeechAutoplay && !speaking) {
+      setTimeout(() => {
+        if (showFinalModal && !speaking) toggleFinalSpeech();
+      }, 400);
+    }
+    return;
+  }
+
+  const currentLine = finalTW.lines[finalTW.lineIdx];
+
+  if (currentLine === "") {
+    // Blank line -- just commit it as a spacer with a pause
+    finalTW.displayed.push("");
+    finalTW.lineIdx++;
+    finalTW.rethinkPauseUntil = now + 140;
+    finalTWRender();
+    return;
+  }
+
+  if (finalTW.charIdx < currentLine.length) {
+    finalTW.partial += currentLine[finalTW.charIdx];
+    finalTW.charIdx++;
+
+    // Soft typing sound every 4 chars
+    if (audioArmed && finalTW.charIdx % 4 === 0) {
+      const f = 340 + (finalTW.charIdx % 13) * 16;
+      sfxBlip(f, 0.001, 0.018, 0.05);
+    }
+
+    // Rethink opportunity at word boundaries
+    const ch = finalTW.partial[finalTW.partial.length - 1];
+    if (ch === " " && !finalTW.rethinking && Math.random() < RETHINK_CHANCE * 0.7) {
+      const words = finalTW.partial.trimEnd().split(/\s+/);
+      const lastWord = words[words.length - 1].toLowerCase().replace(/[^a-z]/g, "");
+      const sub = RETHINK_SUBS.find(([w]) => w === lastWord);
+      if (sub) {
+        finalTW.rethinkPauseUntil  = now + 220;
+        finalTW.rethinkDeleteCount = sub[0].length;
+        finalTW.rethinkReplacement = sub[1];
+        finalTW.rethinkOrigPos     = finalTW.partial.trimEnd().length - sub[0].length;
+        finalTW.partial = finalTW.partial.trimEnd();
+        finalTW.rethinking = true;
+      }
+    }
+  } else {
+    finalTW.displayed.push(finalTW.partial);
+    finalTW.partial = "";
+    finalTW.charIdx = 0;
+    finalTW.lineIdx++;
+    finalTW.rethinkPauseUntil = now + 160;
+  }
+
+  finalTWRender();
+}
+
+function finalTWRender() {
+  if (!finalBodyEl) return;
+  const cursor = finalTW.done ? "" : '<span class="tw-cursor">█</span>';
+
+  const parts = [];
+  for (let i = 0; i < finalTW.displayed.length; i++) {
+    const l = finalTW.displayed[i];
+    if (l === "") {
+      parts.push('<span class="tw-stanza-break"></span>');
+    } else {
+      parts.push(`<span class="tw-done">${escHtml(l)}</span>`);
+    }
+  }
+
+  const partial = (finalTW.partial.length > 0 || !finalTW.done)
+    ? `<span class="tw-active">${escHtml(finalTW.partial)}${cursor}</span>`
+    : "";
+
+  // Join with empty string -- \n between block spans inside a pre causes
+  // visible blank lines. The spans are display:block so they stack cleanly.
+  finalBodyEl.innerHTML = parts.join("") + partial;
+  finalBodyEl.scrollTop = finalBodyEl.scrollHeight;
+}
+
+function finalTWSkipToEnd() {
+  if (finalTW.lines.length) finalTW.displayed = [...finalTW.lines];
+  finalTW.partial = "";
+  finalTW.lineIdx = finalTW.lines.length;
+  finalTW.done = true;
+  finalTW.rethinking = false;
+  finalTWRender();
+}
+
 function openFinalModal() {
   finalPoemTitle = buildFinalPoemTitle();
-  finalPoemText = buildFinalPoemText();
+  finalPoemText  = buildFinalPoemText();
 
   showFinalModal = true;
   paused = true;
@@ -1534,12 +2105,14 @@ function openFinalModal() {
     finalTitleEl.textContent = finalPoemTitle;
   }
 
+  // Start typewriter -- body is populated by finalTWUpdate()
   if (finalBodyEl) {
-    finalBodyEl.innerText = finalPoemText;
+    finalBodyEl.innerHTML = "";
     finalBodyEl.scrollTop = 0;
   }
+  finalTWReset(finalPoemText);
 
-    if (finalModalEl) {
+  if (finalModalEl) {
     finalModalEl.classList.add("is-open");
     finalModalEl.classList.remove("commons-only");
     finalModalEl.setAttribute("aria-hidden", "false");
@@ -1549,14 +2122,7 @@ function openFinalModal() {
   setPoetryCommonsEnabled(false);
   renderLeaderboard();
   refreshLeaderboard();
-
-  if (finalSpeechAutoplay) {
-    setTimeout(() => {
-      if (showFinalModal && !speaking) {
-        toggleFinalSpeech();
-      }
-    }, 250);
-  }
+  // TTS autoplay is now triggered by finalTWUpdate() once typing finishes
 }
 
 function closeFinalModal(returnToMenu = false) {
@@ -1811,7 +2377,10 @@ function drawWorldMode() {
   drawCRTBackground();
 
   if (fractalLayer) {
-    if (act === 2) {
+    if (act === 3 && act3Theme) {
+      const t3 = act3Theme;
+      tint(t3.tintR, t3.tintG, t3.tintB, t3.tintA);
+    } else if (act === 2) {
       const a = 220 + 20 * sin(frameCount * 0.06);
       tint(180, 255, 255, a);
     } else {
@@ -1931,10 +2500,18 @@ function drawTouchButtons() {
 
   let interactLabel;
   if (mode === "focus") {
-    interactLabel = (focusId === "door" && canFinalizePoem()) ? "SEAL POEM (E)" : "CLOSE (E)";
+    if (focusId === "door" && canFinalizePoem()) {
+      interactLabel = isTouchInput() ? "SEAL POEM" : "SEAL POEM (E)";
+    } else {
+      interactLabel = isTouchInput() ? "CLOSE" : "CLOSE (E)";
+    }
   } else {
     const near = pickInteractTarget();
-    interactLabel = (near.s && near.d <= INTERACT_RADIUS) ? "INTERACT (E)" : "EXPLORE";
+    if (near.s && near.d <= INTERACT_RADIUS) {
+      interactLabel = isTouchInput() ? "INTERACT" : "INTERACT (E)";
+    } else {
+      interactLabel = "EXPLORE";
+    }
   }
   text(interactLabel, interact.x + interact.w * 0.5, interact.y + interact.h * 0.52);
 
@@ -1950,20 +2527,30 @@ function drawTouchButtons() {
     rect(ping.x, ping.y, ping.w, ping.h, 8);
     noStroke();
     fill(160, 255, 180, 220);
-    text("PING DOOR (Q)", ping.x + ping.w * 0.5, ping.y + ping.h * 0.52);
+    const pingLabel = isTouchInput() ? "PING DOOR" : "PING DOOR (Q)";
+    text(pingLabel, ping.x + ping.w * 0.5, ping.y + ping.h * 0.52);
   }
 
   pop();
 }
 
 function drawCRTBackground() {
-  if (act === 2) background(0, 10, 18);
-  else background(0, 18, 0);
+  if (act === 3 && act3Theme) {
+    background(act3Theme.bgR, act3Theme.bgG, act3Theme.bgB);
+  } else if (act === 2) {
+    background(0, 10, 18);
+  } else {
+    background(0, 18, 0);
+  }
+
+  const glowR = (act === 3 && act3Theme) ? act3Theme.scanR : (act === 2 ? 80 : 0);
+  const glowG = (act === 3 && act3Theme) ? act3Theme.scanG : (act === 2 ? 120 : 255);
+  const glowB = (act === 3 && act3Theme) ? act3Theme.scanB : (act === 2 ? 255 : 120);
 
   noStroke();
   for (let r = Math.max(CW, CH) * 1.2; r > 0; r -= 34) {
     const a = map(r, 0, Math.max(CW, CH) * 1.2, 26, 0);
-    fill(0, 255, 120, a);
+    fill(glowR, glowG, glowB, a);
     ellipse(CW * 0.5, CH * 0.5, r * 1.25, r);
   }
 
@@ -1977,7 +2564,10 @@ function drawCRTBackground() {
   }
 
   for (let y = 0; y < CH; y += 3) {
-    stroke(0, 255, 120, (act === 2) ? 18 : 10);
+    let scanAlpha = 10;
+    if (act === 2) scanAlpha = 18;
+    if (act === 3 && act3Theme) scanAlpha = 22;
+    stroke(glowR, glowG, glowB, scanAlpha);
     line(0, y, CW, y);
   }
 }
@@ -2021,9 +2611,38 @@ function drawStationsWorld() {
       continue;
     }
 
-    stroke(active ? color(0, 255, 170, 240) : color(0, 255, 120, 140));
+    // Act 3 state for this station
+    const isAct3Target  = act === 3 && act3TargetIds.includes(s.id);
+    const isAct3Done    = act === 3 && act3Touched.has(s.id);
+    const isAct3Pending = isAct3Target && !isAct3Done;
+
+    // Pulsing amber ring for Act 3 pending targets
+    if (isAct3Pending) {
+      const pulse3 = 0.55 + 0.45 * sin(frameCount * 0.09);
+      noFill();
+      stroke(255, 200, 60, 180 * pulse3);
+      strokeWeight(Math.max(2.5 * S, 3));
+      const plate = 104 * S;
+      rect(s.x - plate / 2 - 6 * S, s.y - plate / 2 - 6 * S,
+           plate + 12 * S, plate + 12 * S, 16 * S);
+    }
+
+    // Dimmed green tint for already-done Act 3 targets
+    let fillCol, strokeCol;
+    if (isAct3Done) {
+      strokeCol = color(0, 200, 80, 100);
+      fillCol   = color(0, 180, 60, 18);
+    } else if (active) {
+      strokeCol = color(0, 255, 170, 240);
+      fillCol   = color(0, 255, 140, 60);
+    } else {
+      strokeCol = color(0, 255, 120, 140);
+      fillCol   = color(0, 255, 120, 30);
+    }
+
+    stroke(strokeCol);
     strokeWeight(Math.max(2.0 * S, 2.8));
-    fill(active ? color(0, 255, 140, 60) : color(0, 255, 120, 30));
+    fill(fillCol);
 
     const plate = 104 * S;
     rect(s.x - plate / 2, s.y - plate / 2, plate, plate, 12 * S);
@@ -2034,11 +2653,12 @@ function drawStationsWorld() {
     imageMode(CENTER);
     noSmooth();
 
+    // Done targets draw slightly faded
+    if (isAct3Done) tint(100, 200, 100, 140);
     const p = active ? (1.0 + 0.07 * sin(frameCount * 0.18)) : 1.0;
-
     if (s.id === "door") image(img, s.x, s.y, 70 * S * p, 112 * S * p);
-    else image(img, s.x, s.y, 88 * S * p, 88 * S * p);
-
+    else                 image(img, s.x, s.y, 88 * S * p, 88 * S * p);
+    noTint();
     pop();
 
     noStroke();
@@ -2046,6 +2666,23 @@ function drawStationsWorld() {
     textAlign(CENTER, CENTER);
     textSize(14 * S);
     text(s.label, s.x, s.y + 74 * S);
+
+    // Checkmark badge for completed Act 3 targets
+    if (isAct3Done) {
+      noStroke();
+      fill(0, 220, 100, 220);
+      textSize(18 * S);
+      text("✓", s.x + plate * 0.44, s.y - plate * 0.44);
+    }
+
+    // Amber "!" badge for pending Act 3 targets not yet in range
+    if (isAct3Pending && !active) {
+      const badge3 = 0.7 + 0.3 * sin(frameCount * 0.09);
+      noStroke();
+      fill(255, 200, 60, 210 * badge3);
+      textSize(18 * S);
+      text("!", s.x + plate * 0.44, s.y - plate * 0.44);
+    }
   }
 }
 
@@ -2225,15 +2862,23 @@ function drawActBanner() {
 
   const title = (act === 3) ? "ACT 3" : ((act === 2) ? "ACT 2" : "ACT 1");
   const sub = (act === 3)
-    ? "THE POEM WRITES YOU BACK"
+    ? (act3Theme ? act3Theme.bannerSub : "THE POEM WRITES YOU BACK")
     : ((act === 2) ? "THE MACHINE NOTICES YOU" : "THE ROOM SPEAKS");
 
   textAlign(CENTER, CENTER);
-  fill(0, 255, 170, alpha);
+
+  // Act 3 banner uses the theme's sprite color instead of plain green
+  const bannerCol = (act === 3 && act3Theme)
+    ? color(act3Theme.spriteR, act3Theme.spriteG, act3Theme.spriteB, alpha)
+    : color(0, 255, 170, alpha);
+
+  fill(bannerCol);
   textSize(42 * S);
   text(title, CW * 0.5, CH * 0.42);
 
-  fill(0, 255, 170, alpha * 0.75);
+  fill(act === 3 && act3Theme
+    ? color(act3Theme.spriteR, act3Theme.spriteG, act3Theme.spriteB, alpha * 0.75)
+    : color(0, 255, 170, alpha * 0.75));
   textSize(18 * S);
   text(sub, CW * 0.5, CH * 0.52);
 }
@@ -2364,8 +3009,20 @@ function getCompassTarget() {
   }
 
   if (act === 3) {
-    const nextObj = getNextAct3Target();
-    if (nextObj) return { ...nextObj, compassType: "object" };
+    // Point toward the nearest unvisited target (not just the first in array order)
+    const remaining = act3TargetIds
+      .filter(id => !act3Touched.has(id))
+      .map(id => getStationById(id))
+      .filter(Boolean);
+
+    if (remaining.length > 0) {
+      const nearest = remaining.reduce((best, s) => {
+        const d = dist(player.x, player.y, s.x, s.y);
+        const bd = dist(player.x, player.y, best.x, best.y);
+        return d < bd ? s : best;
+      });
+      return { ...nearest, compassType: "object" };
+    }
     return door ? { ...door, compassType: "door" } : null;
   }
 
@@ -2598,6 +3255,7 @@ function tryInteract() {
      FINAL POEM MODAL
   ------------------------- */
 function keyPressed() {
+  setInputMode("keyboard");
   const ae = document.activeElement;
   const isTypingField =
     ae &&
@@ -2659,6 +3317,9 @@ function keyPressed() {
     if (key === " " || keyCode === 32) {
       if (finalPoemTitle === "POETRY COMMONS") {
         speakPoetryCommons();
+      } else if (!finalTW.done) {
+        // Still typing -- skip to end first
+        finalTWSkipToEnd();
       } else {
         toggleFinalSpeech();
       }
@@ -2676,18 +3337,33 @@ function keyPressed() {
      ACT / STANZA MODAL
   ------------------------- */
   if (showActPoemModal) {
-    if (key === "x" || key === "X" || key === "e" || key === "E" || key === " " || keyCode === 32) {
+    if (key === "x" || key === "X" || key === "e" || key === "E") {
+      stopTTS();
       closeActPoemModal();
       return false;
     }
 
+    // Space: if still typing, skip to end; if done, toggle read-aloud
+    if (key === " " || keyCode === 32) {
+      if (!actTW.done) {
+        actTWSkipToEnd();
+      } else if (speaking) {
+        stopTTS();
+      } else {
+        speakText(actPoemTitle + ". " + actPoemText);
+      }
+      return false;
+    }
+
     if (key === "r" || key === "R") {
+      stopTTS();
       closeActPoemModal();
       resetRun(true);
       return false;
     }
 
     if ((key === "t" || key === "T") && window.location.hash === "#debug") {
+      stopTTS();
       closeActPoemModal();
       debugOpenFinalPoem();
       return false;
@@ -2745,6 +3421,7 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function mousePressed(event) {
+  setInputMode("keyboard");
   armAudioIfNeeded();
   const target = event && event.target ? event.target : null;
   if (showFinalModal && target && (target.closest(".leaderboard-panel") || target.closest("#final-modal input") || target.closest("#final-modal button"))) {
@@ -2776,6 +3453,7 @@ function mouseWheel(event) {
 // --------------------------------------------------
 
 function touchStarted() {
+  setInputMode("touch");
   armAudioIfNeeded();
 
   if (!touches || touches.length === 0) return false;
@@ -2811,12 +3489,17 @@ function touchStarted() {
 
   // ACT POEM MODAL
   if (showActPoemModal) {
+    if (!actTW.done) {
+      // First tap while typing: skip to end
+      actTWSkipToEnd();
+      return false;
+    }
     const contBtn = getActPoemContinueButtonRect();
     if (contBtn && _ptInRect(p.x, p.y, contBtn)) {
       closeActPoemModal();
       return false;
     }
-    // Tapping anywhere else on the modal also closes it
+    // Tapping anywhere else closes it once typing is done
     closeActPoemModal();
     return false;
   }
@@ -3350,11 +4033,15 @@ function drawFocusMode() {
 
   fill(0, 255, 170, 170);
   textSize(13 * S);
-  text("Mouse wheel zoom. E closes. Q pings door.", 16 * S, 34 * S);
+  const focusHint = isTouchInput()
+    ? "Tap + / − to zoom. CLOSE button to exit. PING to find door."
+    : "Mouse wheel zoom. E closes. Q pings door.";
+  text(focusHint, 16 * S, 34 * S);
 
   if (focusId === "door" && canFinalizePoem()) {
     fill(0, 255, 170, 230);
-    text("Press E to seal the final poem.", 16 * S, 54 * S);
+    const sealHint = isTouchInput() ? "Tap SEAL POEM to finish." : "Press E to seal the final poem.";
+    text(sealHint, 16 * S, 54 * S);
   }
 
   drawFocusTouchButtons();
@@ -3394,7 +4081,10 @@ function drawActPoemModal() {
 
   fill(0, 255, 170, 170);
   textSize(12 * S);
-  text("Tap CONTINUE or press E / SPACE / X", tx, ty + 28 * S);
+  const hint = isTouchInput()
+    ? (actTW.done ? "Tap anywhere to continue" : "Tap to skip to end")
+    : (actTW.done ? "SPACE: read aloud  |  E / X: continue" : "SPACE: skip to end  |  E / X: close");
+  text(hint, tx, ty + 28 * S);
 
   fill(0, 255, 170, 235);
   textSize(15 * S);
@@ -3876,6 +4566,8 @@ function buildFinalPoemTitle() {
 function updateControlsPanel() {
   if (!controlsContentEl) return;
 
+  const touch = isTouchInput();
+
   if (mode === "boot") {
     controlsContentEl.innerHTML = [
       `<div><span class="control-label">Status:</span> Initializing observer</div>`,
@@ -3885,67 +4577,100 @@ function updateControlsPanel() {
   }
 
   if (mode === "menu") {
-    controlsContentEl.innerHTML = [
-      `<div><span class="control-label">Move:</span> ↑ ↓ or W / S</div>`,
-      `<div><span class="control-label">Select:</span> Enter or Space</div>`,
-      `<div><span class="control-label">Leave Screen:</span> X</div>`
-    ].join("");
+    controlsContentEl.innerHTML = touch
+      ? [
+          `<div><span class="control-label">Navigate:</span> Tap a menu item</div>`,
+        ].join("")
+      : [
+          `<div><span class="control-label">Move:</span> ↑ ↓ or W / S</div>`,
+          `<div><span class="control-label">Select:</span> Enter or Space</div>`,
+          `<div><span class="control-label">Leave Screen:</span> X</div>`
+        ].join("");
     return;
   }
 
   if (mode === "credits") {
-    controlsContentEl.innerHTML = [
-      `<div><span class="control-label">Return:</span> X</div>`,
-      `<div><span class="control-label">Also Return:</span> E or Space</div>`
-    ].join("");
+    controlsContentEl.innerHTML = touch
+      ? [`<div><span class="control-label">Return:</span> Tap anywhere</div>`].join("")
+      : [
+          `<div><span class="control-label">Return:</span> X</div>`,
+          `<div><span class="control-label">Also Return:</span> E or Space</div>`
+        ].join("");
     return;
   }
 
   if (showFinalModal) {
     const commonsMode = finalPoemTitle === "POETRY COMMONS";
+    if (touch) {
+      controlsContentEl.innerHTML = commonsMode
+        ? [
+            `<div><span class="control-label">Read Aloud:</span> Use button below</div>`,
+            `<div><span class="control-label">Close:</span> Tap X button</div>`
+          ].join("")
+        : [
+            `<div><span class="control-label">Read Aloud:</span> Tap Space button</div>`,
+            `<div><span class="control-label">Close:</span> Tap X button</div>`,
+            `<div><span class="control-label">New Poem:</span> Tap Restart</div>`
+          ].join("");
+    } else {
+      controlsContentEl.innerHTML = commonsMode
+        ? [
+            `<div><span class="control-label">Read Aloud:</span> Space</div>`,
+            `<div><span class="control-label">Close:</span> X</div>`,
+            `<div><span class="control-label">Refresh Poems:</span> Use button</div>`
+          ].join("")
+        : [
+            `<div><span class="control-label">Speak Final:</span> Space</div>`,
+            `<div><span class="control-label">Close:</span> X or E</div>`,
+            `<div><span class="control-label">Restart:</span> R</div>`
+          ].join("");
+    }
+    return;
+  }
 
-    controlsContentEl.innerHTML = commonsMode
-      ? [
-          `<div><span class="control-label">Read Aloud:</span> Space</div>`,
-          `<div><span class="control-label">Close:</span> X</div>`,
-          `<div><span class="control-label">Refresh Poems:</span> Use button</div>`
-        ].join("")
+  if (showActPoemModal) {
+    controlsContentEl.innerHTML = touch
+      ? [`<div><span class="control-label">Continue:</span> Tap the CONTINUE button</div>`].join("")
       : [
-          `<div><span class="control-label">Speak Final:</span> Space</div>`,
+          `<div><span class="control-label">Read Aloud:</span> Space</div>`,
           `<div><span class="control-label">Close:</span> X or E</div>`,
           `<div><span class="control-label">Restart:</span> R</div>`
         ].join("");
     return;
   }
 
-  if (showActPoemModal) {
-    controlsContentEl.innerHTML = [
-      `<div><span class="control-label">Read Aloud:</span> Space</div>`,
-      `<div><span class="control-label">Close:</span> X or E</div>`,
-      `<div><span class="control-label">Restart:</span> R</div>`
-    ].join("");
-    return;
-  }
-
   if (mode === "focus") {
-    controlsContentEl.innerHTML = [
-      `<div><span class="control-label">Inspect:</span> Mouse Wheel zoom</div>`,
-      `<div><span class="control-label">Interact:</span> E</div>`,
-      `<div><span class="control-label">Close:</span> X</div>`,
-      `<div><span class="control-label">Find Door:</span> Q</div>`,
-      `<div><span class="control-label">Restart:</span> R</div>`
-    ].join("");
+    controlsContentEl.innerHTML = touch
+      ? [
+          `<div><span class="control-label">Zoom:</span> + / − buttons</div>`,
+          `<div><span class="control-label">Close / Interact:</span> CLOSE button</div>`,
+          `<div><span class="control-label">Find Door:</span> PING button</div>`
+        ].join("")
+      : [
+          `<div><span class="control-label">Zoom:</span> Mouse Wheel</div>`,
+          `<div><span class="control-label">Interact:</span> E</div>`,
+          `<div><span class="control-label">Close:</span> X</div>`,
+          `<div><span class="control-label">Find Door:</span> Q</div>`,
+          `<div><span class="control-label">Restart:</span> R</div>`
+        ].join("");
     return;
   }
 
-  controlsContentEl.innerHTML = [
-    `<div><span class="control-label">Move:</span> WASD or Arrows</div>`,
-    `<div><span class="control-label">Interact:</span> E</div>`,
-    `<div><span class="control-label">Zoom:</span> Mouse Wheel</div>`,
-    `<div><span class="control-label">Close:</span> X</div>`,
-    `<div><span class="control-label">Find Door:</span> Q</div>`,
-    `<div><span class="control-label">Restart:</span> R</div>`
-  ].join("");
+  // World mode
+  controlsContentEl.innerHTML = touch
+    ? [
+        `<div><span class="control-label">Move:</span> Drag anywhere to move</div>`,
+        `<div><span class="control-label">Interact:</span> INTERACT button</div>`,
+        `<div><span class="control-label">Find Door:</span> PING DOOR button</div>`
+      ].join("")
+    : [
+        `<div><span class="control-label">Move:</span> WASD or Arrows</div>`,
+        `<div><span class="control-label">Interact:</span> E</div>`,
+        `<div><span class="control-label">Zoom:</span> Mouse Wheel</div>`,
+        `<div><span class="control-label">Close:</span> X</div>`,
+        `<div><span class="control-label">Find Door:</span> Q</div>`,
+        `<div><span class="control-label">Restart:</span> R</div>`
+      ].join("");
 }
 
 function esc(s) {
@@ -3985,12 +4710,18 @@ function updateUI() {
   let subtitle = "";
 
   if (showFinalModal) {
-    subtitle = "Final poem. X closes. R restarts. Space speaks.";
+    subtitle = isTouchInput()
+      ? "Tap X to close. Tap restart for a new poem."
+      : "Final poem. X closes. R restarts. Space speaks.";
   } else if (mode === "focus") {
     if (focusId === "door" && canFinalizePoem()) {
-      subtitle = "Door ready. Press E to seal. Mouse wheel zoom.";
+      subtitle = isTouchInput()
+        ? "Door ready. Tap SEAL POEM to finish."
+        : "Door ready. Press E to seal. Mouse wheel zoom.";
     } else {
-      subtitle = "Focus View. Mouse Wheel Zoom. E Closes. Q Pings Door.";
+      subtitle = isTouchInput()
+        ? "Focus View. Tap + / − to zoom. Tap CLOSE to exit."
+        : "Focus View. Mouse Wheel Zoom. E Closes. Q Pings Door.";
     }
   } else if (paused) {
     subtitle = "Paused. E returns. R restarts.";
@@ -4008,9 +4739,13 @@ function updateUI() {
         subtitle = "Explore. Find " + need + " more object(s). Hidden SIG nodes deepen SIGNAL.";
         promptEl.classList.add("urgent");
       } else if (!history.includes("door")) {
-        subtitle = "You have enough lines. Find the door. Press Q to ping it.";
+        subtitle = isTouchInput()
+          ? "You have enough lines. Find the door. Tap PING DOOR to locate it."
+          : "You have enough lines. Find the door. Press Q to ping it.";
       } else {
-        subtitle = "Return to the door. View it and press E to continue.";
+        subtitle = isTouchInput()
+          ? "Return to the door. Walk up and tap INTERACT to continue."
+          : "Return to the door. View it and press E to continue.";
       }
     } else if (act === 2) {
       const needSig = Math.max(0, 2 - act2SigCollected);
@@ -4022,12 +4757,16 @@ function updateUI() {
       }
       if (!act2Calibrated || needSig > 0) promptEl.classList.add("urgent");
     } else {
-      const nextObj = getNextAct3Target();
-      if (nextObj) {
-        subtitle = "Revisit " + formatItemName(nextObj.id) + ". Then return to the door.";
+      const theme = act3Theme;
+      const remaining = act3TargetIds.filter(id => !act3Touched.has(id));
+      if (remaining.length > 0) {
+        const names = remaining.map(formatItemName).join(", ");
+        subtitle = theme
+          ? theme.hudRemaining(names)
+          : "Return to: " + names + ". Visit them in any order.";
         promptEl.classList.add("urgent");
       } else {
-        subtitle = "All revisions complete. Return to the door and seal the poem.";
+        subtitle = theme ? theme.hudDone : "All revisits complete. Return to the door and seal the poem.";
       }
     }
   }
@@ -4344,112 +5083,127 @@ function getItemSpriteBase(id) {
   return g;
 }
 
+// Animated frame cache: maps a state-key to a p5.Graphics object.
+// Cleared on resize (done in windowResized) and on act3 state changes.
+let itemFrameCache = new Map();
+
+function clearItemFrameCache() {
+  itemFrameCache.clear();
+}
+
 function getItemSpriteFrame(id) {
   const base = getItemSpriteBase(id);
 
+  // Determine color-state for this item
+  const isThemeTarget = act === 3 && act3Theme && act3TargetIds.includes(id);
+  const isDoneTarget  = isThemeTarget && act3Touched.has(id);
+  const colorState    = isThemeTarget ? (isDoneTarget ? "done" : act3Theme.name) : "default";
+
+  // Determine animation bucket -- how finely we need to key the animation.
+  // Most items only have a handful of visual frames; bucket by a slower counter
+  // so we don't regenerate every real frame.
+  const fc = isThemeTarget && !isDoneTarget
+    ? Math.floor(frameCount * 1.6)
+    : frameCount;
+
+  // Each item has its own animation period; use a bucket size that matches it
+  const animPeriod = (() => {
+    switch (id) {
+      case "lamp":      return 12;
+      case "mirror":    return 16;
+      case "desk":      return 10;
+      case "door":      return 20;
+      case "radio":     return 18;
+      case "candle":    return 10;
+      case "ribbon":    return 14;
+      default:          return 42;
+    }
+  })();
+  const animBucket = Math.floor(fc / 2) % animPeriod;  // update at ~30fps equiv
+
+  const cacheKey = id + ":" + colorState + ":" + animBucket;
+  if (itemFrameCache.has(cacheKey)) return itemFrameCache.get(cacheKey);
+
+  // --- Build the frame ---
   const g = createGraphics(24, 24);
   g.pixelDensity(1);
   g.noSmooth();
   g.clear();
   g.image(base, 0, 0);
 
-  const ON  = [0, 255, 170, 235];
-  const HOT = [180, 255, 220, 235];
-  const DIM = [0, 200, 120, 210];
+  let ON, HOT, DIM;
+  if (isThemeTarget && !isDoneTarget) {
+    const tr = act3Theme.spriteR;
+    const tg = act3Theme.spriteG;
+    const tb = act3Theme.spriteB;
+    ON  = [tr, tg, tb, 235];
+    HOT = [Math.min(255, tr + 40), Math.min(255, tg + 40), Math.min(255, tb + 40), 255];
+    DIM = [Math.floor(tr * 0.7), Math.floor(tg * 0.7), Math.floor(tb * 0.7), 210];
+  } else if (isDoneTarget) {
+    ON  = [140, 180, 140, 180];
+    HOT = [160, 200, 160, 200];
+    DIM = [100, 140, 100, 160];
+  } else {
+    ON  = [0, 255, 170, 235];
+    HOT = [180, 255, 220, 235];
+    DIM = [0, 200, 120, 210];
+  }
 
+  const phase = animBucket;
+  const blink = (animBucket % 42) < 4;
   const px = (x, y, c = ON) => { g.noStroke(); g.fill(...c); g.rect(x, y, 2, 2); };
 
   if (id === "lamp") {
-    const t = frameCount % 12;
+    const t = (fc % 12);
     if (t < 6) { px(12, 12, HOT); px(10, 12, DIM); }
-    else { px(12, 12, ON); px(14, 12, HOT); }
-    return g;
-  }
-
-  if (id === "mirror") {
-    const step = frameCount % 16;
-    const x = 8 + (step % 4) * 2;
-    const y = 8 + Math.floor(step / 4) * 2;
-    px(x, y, HOT);
-    px(x + 2, y + 2, DIM);
-    return g;
-  }
-
-  if (id === "desk") {
-    const y = (frameCount % 10 < 5) ? 10 : 12;
+    else        { px(12, 12, ON);  px(14, 12, HOT); }
+  } else if (id === "mirror") {
+    const step = fc % 16;
+    const mx = 8 + (step % 4) * 2;
+    const my = 8 + Math.floor(step / 4) * 2;
+    px(mx, my, HOT);
+    px(mx + 2, my + 2, DIM);
+  } else if (id === "desk") {
+    const y = (fc % 10 < 5) ? 10 : 12;
     for (let x = 6; x <= 16; x += 2) px(x, y, DIM);
-    return g;
+  } else if (id === "door") {
+    const bk = (fc % 20 < 3);
+    if (bk) px(16, 12, HOT);
+    if (fc % 18 < 9) { px(8, 8, DIM); px(16, 8, DIM); }
+  } else {
+    const seed = idHash(id);
+    const ph = (fc + (seed % 97)) % 24;
+    const bl = ((fc + (seed % 41)) % 42) < 4;
+    switch (id) {
+      case "mug":       if (bl) { px(12, 10, HOT); px(14, 10, DIM); } break;
+      case "paperclip": px(10 + (ph % 4) * 2, 8 + Math.floor((ph % 8) / 2) * 2, HOT); break;
+      case "tape":      if (bl) px(12, 12, HOT); break;
+      case "coin": case "marble": case "button": case "clock": case "lens":
+        px(8 + (ph % 5) * 2, 8 + ((ph + 1) % 5) * 2, HOT); break;
+      case "feather":   px(10, 8 + (ph % 5) * 2, HOT); break;
+      case "chalk":     if (bl) { px(8, 12, HOT); px(16, 12, HOT); } break;
+      case "glove":     if (bl) px(14, 10, HOT); break;
+      case "radio":     if (fc % 18 < 9) px(10, 12, HOT); else px(12, 12, HOT); break;
+      case "plant":     px(8 + (ph % 3) * 4, 10, HOT); break;
+      case "candle":    if (fc % 10 < 5) px(12, 6, HOT); else px(12, 4, HOT); break;
+      case "ribbon":    px((fc % 14 < 7) ? 10 : 14, 10, HOT); break;
+      case "shell":     if (bl) px(12, 10, HOT); break;
+      case "needle":    px(18, 12, HOT); break;
+      case "map":       px((fc % 12 < 6) ? 8 : 16, 8, HOT); break;
+      case "stone":     if (bl) px(12, 12, HOT); break;
+      case "key":       if (bl) { px(10, 12, HOT); px(18, 12, HOT); } break;
+    }
   }
 
-  if (id === "door") {
-    const blink = (frameCount % 20 < 3);
-    if (blink) px(16, 12, HOT);
-    if (frameCount % 18 < 9) { px(8, 8, DIM); px(16, 8, DIM); }
-    return g;
+  // Evict old keys for this item to prevent unbounded growth
+  // (keep only the most recent frame per id+colorState)
+  for (const k of itemFrameCache.keys()) {
+    if (k.startsWith(id + ":" + colorState + ":") && k !== cacheKey) {
+      itemFrameCache.delete(k);
+    }
   }
 
-  // Decor gleam: slower and subtler than mirror/lamp
-  const seed = idHash(id);
-  const phase = (frameCount + (seed % 97)) % 24;
-  const blink = ((frameCount + (seed % 41)) % 42) < 4;
-
-  switch (id) {
-    case "mug":
-      if (blink) { px(12, 10, HOT); px(14, 10, DIM); }
-      break;
-    case "paperclip":
-      px(10 + (phase % 4) * 2, 8 + Math.floor((phase % 8) / 2) * 2, HOT);
-      break;
-    case "tape":
-      if (blink) px(12, 12, HOT);
-      break;
-    case "coin":
-    case "marble":
-    case "button":
-    case "clock":
-    case "lens":
-      px(8 + (phase % 5) * 2, 8 + ((phase + 1) % 5) * 2, HOT);
-      break;
-    case "feather":
-      px(10, 8 + (phase % 5) * 2, HOT);
-      break;
-    case "chalk":
-      if (blink) { px(8, 12, HOT); px(16, 12, HOT); }
-      break;
-    case "glove":
-      if (blink) px(14, 10, HOT);
-      break;
-    case "radio":
-      if (frameCount % 18 < 9) px(10, 12, HOT);
-      else px(12, 12, HOT);
-      break;
-    case "plant":
-      px(8 + (phase % 3) * 4, 10, HOT);
-      break;
-    case "candle":
-      if (frameCount % 10 < 5) px(12, 6, HOT);
-      else px(12, 4, HOT);
-      break;
-    case "ribbon":
-      px((frameCount % 14 < 7) ? 10 : 14, 10, HOT);
-      break;
-    case "shell":
-      if (blink) px(12, 10, HOT);
-      break;
-    case "needle":
-      px(18, 12, HOT);
-      break;
-    case "map":
-      px((frameCount % 12 < 6) ? 8 : 16, 8, HOT);
-      break;
-    case "stone":
-      if (blink) px(12, 12, HOT);
-      break;
-    case "key":
-      if (blink) { px(10, 12, HOT); px(18, 12, HOT); }
-      break;
-  }
-
+  itemFrameCache.set(cacheKey, g);
   return g;
 }
 
@@ -4550,144 +5304,339 @@ function sfxFocusClose() { sfxBlip(520, 0.001, 0.05, 0.14); }
 function sfxZoomTick(down) { sfxBlip(down ? 420 : 560, 0.001, 0.02, 0.10); }
 
 function initProceduralMusic() {
-  // Instruments (no noise)
-  music.lead = new p5.Oscillator("triangle");
-  music.bass = new p5.Oscillator("square");
-  music.hatOsc = new p5.Oscillator("square"); // clicky hat
+  music.lead    = new p5.Oscillator("triangle");
+  music.bass    = new p5.Oscillator("sine");
+  music.hatOsc  = new p5.Oscillator("square");
+  music.arp     = new p5.Oscillator("sine");   // arpeggio / sparkle layer
 
-  music.lead.start(); music.bass.start(); music.hatOsc.start();
-  music.lead.amp(0);  music.bass.amp(0);  music.hatOsc.amp(0);
+  music.lead.start();  music.bass.start();
+  music.hatOsc.start(); music.arp.start();
+  music.lead.amp(0);   music.bass.amp(0);
+  music.hatOsc.amp(0); music.arp.amp(0);
 
-  // FX chain
   music.filter = new p5.LowPass();
   music.reverb = new p5.Reverb();
   music.delay  = new p5.Delay();
 
-  // Route into filter
   music.lead.disconnect();
   music.bass.disconnect();
   music.hatOsc.disconnect();
+  music.arp.disconnect();
 
   music.lead.connect(music.filter);
   music.bass.connect(music.filter);
   music.hatOsc.connect(music.filter);
+  music.arp.connect(music.filter);
 
-  music.reverb.process(music.filter, 1.2, 1.0);
-  music.delay.process(music.filter, 0.12, 0.22, 1600);
+  music.reverb.process(music.filter, 1.8, 0.9);
+  music.delay.process(music.filter, 0.14, 0.28, 2200);
 
-  music.filter.freq(1500);
-  music.filter.res(9);
+  music.filter.freq(1800);
+  music.filter.res(7);
 
-  // Timing + pep
   music.lastStepAt = 0;
-  music.step = 0;
-  music.bpmBase = 112;
-  music.bpm = 112;
-
-  music.speedSmoothed = 0;
-  music._energySmoothed = 0;
+  music.step       = 0;
+  music.bar        = 0;     // which bar (0-3) within a 4-bar phrase
+  music.phrase     = 0;     // which phrase (cycles slowly)
+  music.bpmBase    = 108;
+  music.bpm        = 108;
+  music.speedSmoothed     = 0;
+  music._energySmoothed   = 0;
+  music._melodyStep       = 0;
+  music._lastArpAt        = 0;
+  music._arpStep          = 0;
 }
+
+// --- Music helpers ---
+
+// Convert a scale degree + octave to Hz.  root is Hz, scale is array of semitone offsets.
+function degToHz(root, scale, degree, octaveShift) {
+  const len = scale.length;
+  const oct = Math.floor(degree / len) + (octaveShift || 0);
+  const sem = scale[((degree % len) + len) % len];
+  return root * Math.pow(2, (sem + oct * 12) / 12);
+}
+
+// Pick a scale based on signal count -- more signal = richer mode
+function getWorldScale() {
+  if (signal >= 5) return [0, 2, 4, 6, 7, 9, 11]; // Lydian -- open, luminous
+  if (signal >= 3) return [0, 2, 3, 5, 7, 9, 10];  // Dorian -- warm minor
+  if (signal >= 1) return [0, 2, 3, 5, 7, 8, 10];  // Aeolian -- natural minor
+  return [0, 2, 4, 5, 7, 9, 11];                   // Major -- neutral start
+}
+
+// Melody motifs: arrays of scale-degree offsets.
+// Each motif is 8 steps; null = rest.
+const MELODY_MOTIFS = [
+  [4, 3, 4, 5, 3, null, 2, 0],
+  [0, 2, 3, 5, 3, 2, 0, null],
+  [5, 4, 3, 4, 5, null, 6, 5],
+  [2, 3, 5, 3, null, 2, 0, 2],
+  [7, 6, 5, 3, null, 5, 4, null],
+  [0, null, 3, 2, 3, null, 5, 3],
+];
+
+// Bass chord root sequences (scale degree pairs that alternate)
+const BASS_PROGRESSIONS = [
+  [0, 4], [0, 5], [0, 3], [5, 3],
+  [0, 6], [4, 5], [0, 4],
+];
 
 function updateProceduralMusic() {
   if (!audioArmed || !musicOn || !music.lead || !music.bass || !music.hatOsc || !music.filter) return;
 
-  // MENU / CREDITS / BOOT MUSIC
+  const t = millis();
+
+  // ─── MENU / BOOT / CREDITS ───────────────────────────────────────────────
   if (mode === "menu" || mode === "boot" || mode === "credits") {
-    music.speedSmoothed = lerp(music.speedSmoothed || 0, 0, 0.08);
-    music._energySmoothed = lerp(music._energySmoothed || 0, 0.12, 0.08);
+    music.speedSmoothed   = lerp(music.speedSmoothed   || 0, 0,    0.06);
+    music._energySmoothed = lerp(music._energySmoothed || 0, 0.08, 0.06);
+    music.bpm = lerp(music.bpm || 52, 52, 0.06);
 
-    music.bpm = lerp(music.bpm || 54, 54, 0.08);
-
-    const t = millis();
     const stepMs = 60000 / music.bpm;
     if (t - music.lastStepAt < stepMs) return;
     music.lastStepAt = t;
+    music.step = (music.step + 1) % 32;
 
-    music.step = (music.step + 1) % 16;
+    // Gentle pentatonic drone with slow melodic movement
+    const menuScale = [0, 3, 5, 7, 10];
+    const menuRoot  = 130.81; // C3
+    const deg = music.step % menuScale.length;
+    const lF  = menuRoot * Math.pow(2, menuScale[deg] / 12);
+    const bF  = (menuRoot / 2) * Math.pow(2, menuScale[(deg + 2) % menuScale.length] / 12);
 
-    const scale = [0, 3, 7, 10];
-    const root = 146.83;
+    music.lead.freq(lF);
+    music.bass.freq(bF);
+    music.lead.amp(0.038 + 0.012 * sin(t * 0.0009), 0.3);
+    music.bass.amp(0.028, 0.4);
+    music.hatOsc.amp(0, 0.1);
 
-    const leadDeg = scale[music.step % scale.length];
-    const leadF = root * Math.pow(2, leadDeg / 12);
+    // Arp: soft high notes on beat 1 and 3 of the bar
+    if (music.arp && (music.step % 8 === 0 || music.step % 8 === 4)) {
+      const aF = menuRoot * Math.pow(2, (menuScale[deg] + 12) / 12);
+      music.arp.freq(aF);
+      music.arp.amp(0.022, 0.01);
+      music.arp.amp(0,     0.18);
+    }
 
-    const bassPattern = [0,0,0,0, 3,3,0,0, 7,7,3,3, 0,0,10,10];
-    const bassDeg = bassPattern[music.step];
-    const bassF = (root / 2) * Math.pow(2, bassDeg / 12);
-
-    music.lead.freq(leadF);
-    music.bass.freq(bassF);
-
-    music.lead.amp(0.045, 0.12);
-    music.bass.amp(0.035, 0.12);
-
-    let hatAmp = 0;
-    if (music.step === 4 || music.step === 12) hatAmp = 0.03;
-
-    music.hatOsc.freq(1200);
-    music.hatOsc.amp(hatAmp, 0.01);
-    music.hatOsc.amp(0, 0.08);
-
-    music.filter.freq(1100 + 180 * sin(millis() * 0.0007));
+    music.filter.freq(1200 + 300 * sin(t * 0.0006));
     return;
   }
 
-  // WORLD / FOCUS MUSIC
-  const targetSpeed  = (mode === "world" && !paused && !showFinalModal) ? (player.speed01 || 0) : 0;
-  const targetEnergy = (mode === "world" && !paused && !showFinalModal) ? (player.energy || 0) : 0;
+  // ─── ACT 3 THEME MUSIC ───────────────────────────────────────────────────
+  if (act === 3 && act3Theme && mode !== "boot" && mode !== "menu" && mode !== "credits") {
+    const th = act3Theme.music;
 
-  music.speedSmoothed = lerp(music.speedSmoothed || 0, targetSpeed, 0.10);
+    if (music._act3WaveSet !== act3Theme.name) {
+      try {
+        music.lead.setType(th.waveform);
+        music.bass.setType("sine");
+        if (music.arp) music.arp.setType("triangle");
+        if (music.reverb) music.reverb.set(th.reverbTime, 0.85);
+        if (music.delay)  music.delay.process(music.filter, th.delayTime, 0.32, 2000);
+      } catch(e) {}
+      music._act3WaveSet = act3Theme.name;
+    }
+
+    const remaining    = act3TargetIds.filter(id => !act3Touched.has(id)).length;
+    const completeFrac = act3TargetIds.length > 0
+      ? 1 - (remaining / act3TargetIds.length) : 0;
+
+    const targetBpm = th.bpmBase + th.bpmRange * completeFrac * 0.5;
+    music.bpm = lerp(music.bpm || th.bpmBase, targetBpm, 0.003);
+
+    const stepMs = 60000 / music.bpm;
+    if (t - music.lastStepAt < stepMs) return;
+    music.lastStepAt = t;
+    music.step = (music.step + 1) % 16;
+
+    const scale = th.scale;
+    const root  = th.root;
+
+    // Melody: use a simple motif from the theme scale
+    const motif     = MELODY_MOTIFS[2]; // slower motif for theme music
+    const motifDeg  = motif[music.step % motif.length];
+    const leadF     = motifDeg !== null
+      ? degToHz(root, scale, motifDeg, 1)
+      : null;
+
+    const bassPattern = th.bassPattern;
+    const bassDeg = bassPattern[music.step % bassPattern.length];
+    const bassF   = degToHz(root / 2, scale, bassDeg, 0);
+
+    const leadAmp = 0.030 + 0.030 * completeFrac;
+    const bassAmp = 0.022 + 0.025 * completeFrac;
+
+    if (leadF !== null) {
+      music.lead.freq(leadF);
+      music.lead.amp(leadAmp, 0.14);
+    } else {
+      music.lead.amp(0, 0.12);
+    }
+    music.bass.freq(bassF);
+    music.bass.amp(bassAmp, 0.20);
+
+    // Arp sparkle: high notes on key beats for non-silent themes
+    if (music.arp && th.waveform !== "triangle") {
+      if (music.step % 4 === 2) {
+        const aF = degToHz(root, scale, (bassDeg + 2) % scale.length, 2);
+        music.arp.freq(aF);
+        music.arp.amp(0.018, 0.01);
+        music.arp.amp(0,     0.14);
+      }
+    } else if (music.arp) {
+      music.arp.amp(0, 0.1);
+    }
+
+    let hatAmp = 0;
+    if (th.waveform === "square") {
+      if (music.step % 2 === 0) hatAmp = 0.055 + 0.035 * completeFrac;
+    } else if (th.waveform === "sawtooth") {
+      if (music.step === 0 || music.step === 5 || music.step === 11) hatAmp = 0.036;
+    } else if (th.waveform === "sine") {
+      if (music.step === 8) hatAmp = 0.018;
+    }
+    music.hatOsc.freq(th.filterBase + 500);
+    music.hatOsc.amp(hatAmp, 0.008);
+    if (hatAmp > 0) music.hatOsc.amp(0, 0.05);
+
+    const filterTarget = th.filterBase + th.filterRange * completeFrac;
+    music.filter.freq(lerp(music.filter.getFreq ? music.filter.getFreq() : th.filterBase, filterTarget, 0.012));
+    return;
+  }
+
+  // ─── WORLD / FOCUS MUSIC (Acts 1 & 2) ────────────────────────────────────
+  const inPlay = mode === "world" && !paused && !showFinalModal;
+
+  const targetSpeed  = inPlay ? (player.speed01 || 0) : 0;
+  const targetEnergy = inPlay ? (player.energy  || 0) : 0;
+
+  music.speedSmoothed   = lerp(music.speedSmoothed   || 0, targetSpeed,  0.10);
   music._energySmoothed = lerp(music._energySmoothed || 0, targetEnergy, 0.12);
+
+  // Restore standard waveforms if returning from Act 3
+  if (music._act3WaveSet) {
+    try {
+      music.lead.setType("triangle");
+      music.bass.setType("sine");
+      if (music.arp)    music.arp.setType("sine");
+      if (music.reverb) music.reverb.set(1.8, 0.9);
+      if (music.delay)  music.delay.process(music.filter, 0.14, 0.28, 2200);
+    } catch(e) {}
+    music._act3WaveSet = null;
+  }
 
   const groove = music.speedSmoothed || 0;
   const energy = music._energySmoothed || 0;
-  const drive  = constrain(groove * 0.85 + energy * 0.55, 0, 1);
+  const drive  = constrain(groove * 0.8 + energy * 0.5, 0, 1);
 
-  music.bpm = lerp(music.bpmBase, music.bpmBase + 38, drive);
+  // BPM shifts more meaningfully -- slow when still, brisk when moving
+  music.bpm = lerp(music.bpmBase, music.bpmBase + 32, drive * drive);
 
-  const t = millis();
   const stepMs = 60000 / music.bpm;
   if (t - music.lastStepAt < stepMs) return;
   music.lastStepAt = t;
 
-  music.step = (music.step + 1) % 16;
+  music.step = (music.step + 1) % 32;
 
-  const scale = [0, 2, 4, 7, 9, 12];
-  const root = 220;
+  // Bar / phrase tracking for harmonic movement
+  if (music.step % 8 === 0) {
+    music.bar = ((music.bar || 0) + 1) % 4;
+    if (music.bar === 0) music.phrase = ((music.phrase || 0) + 1) % BASS_PROGRESSIONS.length;
+  }
 
-  const leadDeg = scale[music.step % scale.length];
-  const leadF = root * Math.pow(2, leadDeg / 12);
+  const scale      = getWorldScale();
+  const root       = 220; // A3
 
-  const bassPattern = [0,0,0,0, 4,4,0,0, 7,7,4,4, 0,0,9,9];
-  const bassDeg = bassPattern[music.step];
-  const bassF = (root / 2) * Math.pow(2, bassDeg / 12);
+  // Melody: pick a motif based on phrase, advance through it
+  const motifIdx   = (music.phrase || 0) % MELODY_MOTIFS.length;
+  const motif      = MELODY_MOTIFS[motifIdx];
+  music._melodyStep = (music.step) % motif.length;
+  const motifDeg   = motif[music._melodyStep];
 
-  const leadAmp = 0.030 + 0.12 * drive;
-  const bassAmp = 0.025 + 0.11 * drive;
+  // Lead melody -- rests are real silence, not repeated notes
+  let leadF = null;
+  if (motifDeg !== null) {
+    // Higher octave when moving fast -- energy lifts the melody up
+    const oct = drive > 0.6 ? 2 : 1;
+    leadF = degToHz(root, scale, motifDeg, oct);
+  }
 
-  music.lead.freq(leadF);
+  // Bass: alternates between two chord roots per 4-bar phrase
+  const prog    = BASS_PROGRESSIONS[(music.phrase || 0) % BASS_PROGRESSIONS.length];
+  const bassRootDeg = prog[(music.bar || 0) % prog.length];
+  const bassF   = degToHz(root / 2, scale, bassRootDeg, 0);
+
+  // Amplitude -- lead drops when standing still to keep quiet room feel
+  const leadAmp = motifDeg !== null ? (0.028 + 0.10 * drive) : 0;
+  const bassAmp = 0.022 + 0.08 * drive;
+
+  if (leadF !== null) {
+    music.lead.freq(leadF);
+    music.lead.amp(leadAmp, 0.06);
+  } else {
+    music.lead.amp(0, 0.08);
+  }
   music.bass.freq(bassF);
+  music.bass.amp(bassAmp, 0.12);
 
-  music.lead.amp(leadAmp, 0.03);
-  music.bass.amp(bassAmp, 0.03);
+  // Arpeggio layer: 16th-note sparkle that only appears when moving
+  if (music.arp && drive > 0.3) {
+    const arpRate = stepMs * 0.5; // twice per step
+    if (t - (music._lastArpAt || 0) > arpRate) {
+      music._lastArpAt = t;
+      music._arpStep   = ((music._arpStep || 0) + 1) % 4;
+      // Arpeggiate the current bass chord: root, 3rd, 5th, octave
+      const arpOffsets = [0, 2, 4, 7];
+      const arpDeg     = bassRootDeg + arpOffsets[music._arpStep];
+      const arpF       = degToHz(root, scale, arpDeg, 2);
+      music.arp.freq(arpF);
+      const arpAmp = 0.018 * drive;
+      music.arp.amp(arpAmp, 0.01);
+      music.arp.amp(0,      0.08);
+    }
+  } else if (music.arp) {
+    music.arp.amp(0, 0.15);
+  }
+
+  // Rhythm: sparse pattern when still, fills in as drive increases
+  // 32-step pattern: kick positions, snare positions
+  const kickBeats = [0, 16];
+  const snareBeats = [8, 24];
+  const hihatBeats = drive > 0.25 ? [4, 12, 20, 28] : [];
+  const ghostBeats = drive > 0.6  ? [2, 6, 10, 14, 18, 22, 26, 30] : [];
 
   let hatAmp = 0;
-  if (music.step % 2 === 1) hatAmp += 0.08;
-  if (drive > 0.55 && (music.step === 6 || music.step === 14)) hatAmp += 0.07;
-  if (music.step === 4 || music.step === 12) hatAmp += 0.10 * (0.4 + 0.6 * energy);
+  if (kickBeats.includes(music.step))  hatAmp = 0.10 + 0.06 * energy;
+  if (snareBeats.includes(music.step)) hatAmp = 0.08 + 0.05 * drive;
+  if (hihatBeats.includes(music.step)) hatAmp = Math.max(hatAmp, 0.055 * drive);
+  if (ghostBeats.includes(music.step)) hatAmp = Math.max(hatAmp, 0.025 * drive);
 
-  const hatF = 1800 + 1200 * drive;
+  const hatF = snareBeats.includes(music.step)
+    ? 900 + 400 * energy   // snare is mid-high
+    : (kickBeats.includes(music.step)
+      ? 200 + 100 * drive  // kick is low
+      : 2800 + 800 * drive); // hihat is high
+
   music.hatOsc.freq(hatF);
+  music.hatOsc.amp(hatAmp, 0.004);
+  if (hatAmp > 0) music.hatOsc.amp(0, kickBeats.includes(music.step) ? 0.18 : 0.04);
 
-  music.hatOsc.amp(hatAmp, 0.005);
-  music.hatOsc.amp(0, 0.03);
-
-  music.filter.freq(lerp(1400, 4200, drive) + 120 * signal);
+  // Filter: opens with signal, breathes with phrase
+  const filterBase = 1600 + signal * 220;
+  const filterMod  = 400 * sin(t * 0.00045) + 200 * drive;
+  music.filter.freq(filterBase + filterMod);
 }
 
 function musicAccent() {
   if (!audioArmed || !musicOn) return;
-  sfxBlip(980, 0.001, 0.03, 0.10);
+  sfxBlip(1040, 0.001, 0.04, 0.12);
+  if (music.arp) {
+    // Quick arpeggio flick up
+    music.arp.freq(880);
+    music.arp.amp(0.06, 0.005);
+    music.arp.amp(0,    0.12);
+  }
 }
 
 /* ==========================================================

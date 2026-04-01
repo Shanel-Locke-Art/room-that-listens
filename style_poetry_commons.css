@@ -547,6 +547,58 @@ body::after{
 }
 
 /* =========================
+   ACT POEM TYPEWRITER
+========================= */
+
+/* The pre elements use white-space:pre-wrap by default (from .final-body).
+   For the typewriter we need display:block spans to stack tightly,
+   so we override to normal and control spacing purely via line-height. */
+#act-poem-body,
+#final-body{
+  white-space: normal;
+}
+
+#act-poem-body .tw-done,
+#final-body .tw-done{
+  display: block;
+  color: var(--crt-text-soft);
+  opacity: 0.72;
+  line-height: 1.65;
+}
+
+#act-poem-body .tw-active,
+#final-body .tw-active{
+  display: block;
+  color: #9affdc;
+  line-height: 1.65;
+  text-shadow:
+    0 0 6px rgba(100, 255, 210, 0.4),
+    0 0 14px rgba(100, 255, 210, 0.2);
+}
+
+#act-poem-body .tw-cursor,
+#final-body .tw-cursor{
+  display: inline-block;
+  color: #b8ffe8;
+  text-shadow:
+    0 0 4px #66ffd1,
+    0 0 10px #00ffc8;
+  animation: twCursorBlink 0.7s steps(1) infinite;
+  margin-left: 1px;
+}
+
+/* Stanza break: a thin visual gap between poem blocks */
+#final-body .tw-stanza-break{
+  display: block;
+  height: 0.55em;
+}
+
+@keyframes twCursorBlink{
+  0%, 49%{ opacity: 1; }
+  50%, 100%{ opacity: 0; }
+}
+
+/* =========================
    ANIMATIONS
 ========================= */
 @keyframes typingPulse{
