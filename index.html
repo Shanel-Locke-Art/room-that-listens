@@ -3,15 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <!-- iOS: full-screen web-app mode when added to home screen -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <!-- Prevent phone numbers / addresses being auto-linked -->
   <meta name="format-detection" content="telephone=no" />
-  <!-- Match browser chrome to the CRT background -->
   <meta name="theme-color" content="#001a00" />
-  <title>The Poem Room</title>
+  <title>A Small Loop Leaks</title>
 
   <link rel="stylesheet" href="style_poetry_commons.css" />
   <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet" />
@@ -24,36 +21,40 @@
 
     <aside class="rightpanels">
       <section class="controls-box">
-        <div class="panel-title">Interface</div>
+        <div class="panel-title">Right Now</div>
         <div id="controls-content"></div>
       </section>
 
       <section class="howto-box">
-        <div class="panel-title">How to Play</div>
+        <div class="panel-title">About This Room</div>
 
         <div class="howto-p">
-          This is a collaboration between you and the computer. You do the noticing and choosing. The computer does the remembering and remixing.
+          You move through a small space. You choose what to touch.
+          The machine watches what you notice, and makes a poem from the order of your attention.
         </div>
 
         <div class="howto-p">
-          <b>Why a room?</b> A room is a small universe with rules. It is a container for randomness. Each object is a different kind of language.
+          Neither of you is the author alone.
         </div>
 
-        <div class="panel-sub">THE THREE ACTS</div>
+        <div class="panel-sub">THREE MOVEMENTS</div>
 
         <div class="howto-p">
-          <b>Act I</b> - Explore the room and interact with objects to collect lines for the poem.
-        </div>
-
-        <div class="howto-p">
-          <b>Act II</b> - Follow the required object sequence and gather hidden SIG.
+          <b>First</b> — Wander. Touch what draws you.
+          The room is listening.
         </div>
 
         <div class="howto-p">
-          <b>Act III</b> - The room chooses a theme. Find the objects that belong to it.
+          <b>Second</b> — The room asks you to follow a pattern.
+          Some things are hidden. Finding them deepens what can be said.
         </div>
 
-        <div class="panel-sub" id="howto-controls-title">CONTROLS</div>
+        <div class="howto-p">
+          <b>Third</b> — The room has chosen a theme.
+          Find what belongs to it. Then return to the door.
+        </div>
+
+        <div class="panel-sub" id="howto-controls-title">MOVING THROUGH IT</div>
         <div id="howto-controls-body" class="howto-p">
           <!-- Filled in by JS based on device type -->
         </div>
@@ -65,23 +66,23 @@
   </header>
 
   <div id="act-poem-modal" class="final-modal" aria-hidden="true">
-  <div class="final-panel">
-    <div class="final-head">
-      <div class="final-hint" id="act-poem-hint">SPACE: SKIP / READ ALOUD  |  X or E: CLOSE</div>
-    </div>
-
-    <div class="final-content final-content-single">
-      <section class="final-poem-wrap">
-        <div id="act-poem-title" class="final-title"></div>
-        <pre id="act-poem-body" class="final-body"></pre>
-      </section>
+    <div class="final-panel">
+      <div class="final-head">
+        <div class="final-hint" id="act-poem-hint">SPACE: SKIP OR READ ALOUD  |  X or E: STEP BACK IN</div>
+      </div>
+      <div class="final-content final-content-single">
+        <section class="final-poem-wrap">
+          <div id="act-poem-title" class="final-title"></div>
+          <pre id="act-poem-body" class="final-body"></pre>
+        </section>
+      </div>
     </div>
   </div>
-</div>
+
   <div id="final-modal" class="final-modal" aria-hidden="true">
     <div class="final-panel">
       <div class="final-head">
-        <div class="final-hint" id="final-modal-hint">SPACE: READ ALOUD OR STOP  |  X: CLOSE  |  E: STEP BACK INTO THE ROOM  |  R: START A NEW POEM</div>
+        <div class="final-hint" id="final-modal-hint">SPACE: READ ALOUD OR STOP  |  X: CLOSE  |  R: BEGIN AGAIN</div>
       </div>
 
       <div class="final-content">
@@ -92,12 +93,12 @@
 
         <aside class="leaderboard-panel">
           <div class="leaderboard-head">
-            <div class="leaderboard-title">Poetry Commons</div>
-            <div id="leaderboard-status" class="leaderboard-status">Poetry Commons is live.</div>
+            <div class="leaderboard-title">Shared Poems</div>
+            <div id="leaderboard-status" class="leaderboard-status">Shared Poems is open.</div>
           </div>
 
           <div class="leaderboard-compose">
-            <label class="leaderboard-label" for="poet-name">Your Name</label>
+            <label class="leaderboard-label" for="poet-name">Your name, if you want to leave one</label>
             <input
               id="poet-name"
               class="leaderboard-input"
@@ -108,16 +109,16 @@
 
             <div class="leaderboard-actions">
               <button id="share-poem-btn" class="leaderboard-btn" type="button">
-                Share Your Poem
+                Leave This Poem Here
               </button>
               <button id="refresh-board-btn" class="leaderboard-btn ghost" type="button">
-                Refresh Poems
+                Check for New Poems
               </button>
             </div>
           </div>
 
           <div id="leaderboard-list" class="leaderboard-list">
-            <div class="leaderboard-empty">No poems have been shared here yet.</div>
+            <div class="leaderboard-empty">Nothing has been left here yet.</div>
           </div>
         </aside>
       </div>
@@ -132,57 +133,52 @@
   <script src="./sketch_poetry_commons.js"></script>
 
   <script>
-  // Populate device-aware content once the DOM and sketch are both ready.
-  // Runs after p5 setup() has detected touch capability.
   (function() {
     const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
 
-    // How to Play controls section
     const howtoBody = document.getElementById('howto-controls-body');
     if (howtoBody) {
       howtoBody.innerHTML = isTouch
-        ? '<b>Move:</b> Drag anywhere on the game canvas.<br>' +
-          '<b>Interact:</b> Tap the INTERACT button (bottom-right).<br>' +
-          '<b>Find Door:</b> Tap PING DOOR to reveal a trail.<br>' +
-          '<b>Zoom:</b> Use + / − buttons in Focus View.<br>' +
-          '<b>Close / Continue:</b> Tap the on-screen button.'
-        : '<b>Move:</b> WASD or Arrow keys.<br>' +
-          '<b>Interact:</b> E key.<br>' +
-          '<b>Find Door:</b> Q to send a pulse.<br>' +
-          '<b>Zoom:</b> Mouse wheel in Focus View.<br>' +
-          '<b>Close:</b> X key.  <b>Restart:</b> R key.';
+        ? '<b>Move:</b> Drag anywhere on the canvas.<br>' +
+          '<b>Touch Something:</b> Tap INTERACT when close.<br>' +
+          '<b>Find the Door:</b> Tap PING DOOR to locate it.<br>' +
+          '<b>Look Closely:</b> Use + / − to zoom.<br>' +
+          '<b>Step Back:</b> Tap CLOSE.'
+        : '<b>Move:</b> WASD or arrow keys.<br>' +
+          '<b>Touch Something:</b> E when you are close.<br>' +
+          '<b>Find the Door:</b> Q sends a pulse toward it.<br>' +
+          '<b>Look Closely:</b> Mouse wheel to zoom.<br>' +
+          '<b>Step Back:</b> X or E.<br>' +
+          '<b>Begin again:</b> R.';
     }
 
-    // Modal hint bars
     const actHint = document.getElementById('act-poem-hint');
-    if (actHint) {
-      actHint.textContent = isTouch
-        ? 'TAP TO SKIP  |  TAP AGAIN TO CONTINUE'
-        : 'SPACE: SKIP / READ ALOUD  |  X or E: CLOSE';
+    if (actHint && isTouch) {
+      actHint.textContent = 'TAP TO SKIP  |  TAP AGAIN TO STEP BACK IN';
     }
 
     const finalHint = document.getElementById('final-modal-hint');
-    if (finalHint) {
-      finalHint.textContent = isTouch
-        ? 'TAP X TO CLOSE  |  TAP RESTART FOR A NEW POEM'
-        : 'SPACE: READ ALOUD OR STOP  |  X: CLOSE  |  E: STEP BACK INTO THE ROOM  |  R: START A NEW POEM';
+    if (finalHint && isTouch) {
+      finalHint.textContent = 'TAP X TO CLOSE  |  TAP TO BEGIN AGAIN';
     }
 
-    // If input mode switches during play (e.g. keyboard plugged in),
-    // re-run the hint update so the panel stays accurate.
     document.addEventListener('keydown', function onFirstKey() {
       const actH = document.getElementById('act-poem-hint');
       const finH = document.getElementById('final-modal-hint');
-      if (actH) actH.textContent = 'SPACE: SKIP / READ ALOUD  |  X or E: CLOSE';
-      if (finH) finH.textContent = 'SPACE: READ ALOUD OR STOP  |  X: CLOSE  |  E: STEP BACK INTO THE ROOM  |  R: START A NEW POEM';
-      const hw = document.getElementById('howto-controls-body');
+      const hw   = document.getElementById('howto-controls-body');
+
+      if (actH) actH.textContent = 'SPACE: SKIP OR READ ALOUD  |  X or E: STEP BACK IN';
+      if (finH) finH.textContent = 'SPACE: READ ALOUD OR STOP  |  X: CLOSE  |  R: BEGIN AGAIN';
+
       if (hw) {
-        hw.innerHTML = '<b>Move:</b> WASD or Arrow keys.<br>' +
-          '<b>Interact:</b> E key.<br>' +
-          '<b>Find Door:</b> Q to send a pulse.<br>' +
-          '<b>Zoom:</b> Mouse wheel in Focus View.<br>' +
-          '<b>Close:</b> X key.  <b>Restart:</b> R key.';
+        hw.innerHTML =
+          '<b>Move:</b> WASD or arrow keys.<br>' +
+          '<b>Touch something:</b> E when you are close.<br>' +
+          '<b>Find the door:</b> Q sends a pulse toward it.<br>' +
+          '<b>Look closely:</b> Mouse wheel to zoom.<br>' +
+          '<b>Step back:</b> X or E. &nbsp;<b>Begin again:</b> R.';
       }
+
       document.removeEventListener('keydown', onFirstKey);
     }, { once: true });
   })();

@@ -1,3 +1,25 @@
+/* ==========================================================
+   A SMALL LOOP LEAKS - sketch.js (CLEAN REWRITE)
+
+   This rewrite removes duplicate function declarations and fixes:
+   - act variable declared once
+   - focus view zoom applies to the inspected sprite
+   - mouseWheel zoom works reliably in focus mode
+   - hiddenAction + getHiddenFocusCard signatures match
+   - setup() initialization only runs once
+   - chunky pixel-art sprites with light animation (procedural)
+
+   Folder structure (do not rename):
+   /index.html
+   /style.css
+   /sketch.js
+   /lib/p5.min.js
+   /lib/p5.sound.min.js
+   /shaders/passthrough.vert
+   /shaders/mandelbrot.frag
+   /shaders/filter.frag
+========================================================== */
+
 /* =========================
    CONFIG: paths
 ========================= */
@@ -110,9 +132,9 @@ let focusZoomTarget = 1.35;
    MENU / LORE
 ========================= */
 const MENU_OPTIONS = [
-  "BEGIN WRITING",
-  "POETRY COMMONS",
-  "CREDITS"
+  "ENTER THE ROOM",
+  "SHARED POEMS",
+  "COLOPHON"
 ];
 
 let menuIndex = 0;
@@ -123,19 +145,19 @@ let menuLoreChangedAt = 0;
 let menuLoreEveryMs = 3600;
 
 const MENU_LORE = [
-  "The system does not generate poems. It remembers what you notice.",
-  "A room is a container. A poem is what leaks out.",
-  "You are not the author. You are the interruption.",
-  "The machine cannot begin until you choose to be seen.",
-  "Every object is a language waiting for a witness.",
-  "The room is small. The consequences are not."
+  "The room does not generate poems. It holds what you notice.",
+  "A container is not empty. It is waiting.",
+  "You are not the author. You are the condition.",
+  "Something here has been accumulating since before you arrived.",
+  "Each object is a small decision the world made without asking.",
+  "The loop is not broken. It is breathing."
 ];
 
 const BOOT_LINES = [
-  "INITIALIZING OBSERVER...",
-  "CALIBRATING ROOM TONE...",
-  "UNSEALING COMMONS MEMORY...",
-  "CHECKING FOR A HUMAN INTERRUPTION..."
+  "LOCATING THE OBSERVER...",
+  "ARRANGING THE ROOM...",
+  "RECALLING WHAT WAS LEFT HERE...",
+  "WAITING FOR A HUMAN INTERRUPTION..."
 ];
 
 /* =========================
@@ -959,11 +981,11 @@ function speakText(rawText) {
       setPoetryCommonsEnabled(true);
 
       if (leaderboardStatusEl) {
-        leaderboardStatusEl.textContent = "Poetry Commons is live.";
+        leaderboardStatusEl.textContent = "Shared Poems is open.";
       }
 
       setTimeout(() => {
-        if (finalPoemTitle === "POETRY COMMONS") {
+        if (finalPoemTitle === "SHARED POEMS") {
           if (cnv && cnv.elt) cnv.elt.focus();
         } else if (poetNameInputEl && poetNameInputEl.style.display !== "none" && !poetNameInputEl.disabled) {
           poetNameInputEl.focus();
@@ -995,11 +1017,11 @@ function stopTTS() {
     setPoetryCommonsEnabled(true);
 
     if (leaderboardStatusEl) {
-      leaderboardStatusEl.textContent = "Poetry Commons is live.";
+      leaderboardStatusEl.textContent = "Shared Poems is open.";
     }
 
     setTimeout(() => {
-      if (finalPoemTitle === "POETRY COMMONS") {
+      if (finalPoemTitle === "SHARED POEMS") {
         if (cnv && cnv.elt) cnv.elt.focus();
       } else if (poetNameInputEl && poetNameInputEl.style.display !== "none" && !poetNameInputEl.disabled) {
         poetNameInputEl.focus();
@@ -1049,7 +1071,7 @@ function speakPoetryCommons() {
         }));
 
   if (!entries.length) {
-    speakText("Poetry Commons is empty right now.");
+    speakText("No poems have been shared here yet.");
     return;
   }
 
@@ -1075,19 +1097,21 @@ let creditsCharIndex = 0;
 let creditsTimer = 0;
 
 let creditsLines = [
-  "This system was trained on noticing.",
+  "A small loop leaks.",
   "",
-  "Primary Observer: L0g1cF@11acy",
-  "Built using p5.js",
-  "An open source library for creative coding",
+  "Made by L0g1cF@11acy",
   "",
-  "You are the author.",
-  "The computer assists.",
+  "Built with p5.js",
+  "an open library for creative coding",
   "",
-  "All poems are co-authored.",
-  "No poem is owned.",
+  "The poem belongs to whoever walked through.",
   "",
-  "You were here."
+  "Co-authorship is not a metaphor.",
+  "The machine contributed what it could.",
+  "",
+  "You were the condition.",
+  "",
+  "Thank you for being here."
 ];
 
 /* =========================
@@ -1159,11 +1183,11 @@ function setup() {
     if (e.key.toLowerCase() === "x") {
       e.preventDefault();
       e.stopPropagation();
-      closeFinalModal(finalPoemTitle === "POETRY COMMONS");
+      closeFinalModal(finalPoemTitle === "SHARED POEMS");
       return;
     }
 
-    if ((e.key === " " || e.code === "Space") && finalPoemTitle === "POETRY COMMONS") {
+    if ((e.key === " " || e.code === "Space") && finalPoemTitle === "SHARED POEMS") {
       e.preventDefault();
       e.stopPropagation();
       speakPoetryCommons();
@@ -1574,14 +1598,13 @@ function resetRun(startInMenu = false) {
   generateStations();
 
   if (!startInMenu) {
-    queuePoemLine("A room shimmers in green phosphor.");
-    queuePoemLine("You and the machine co-write a poem by moving through it.");
-    queuePoemLine("Interact with 2 objects, then the door. The order becomes the poem.");
-    queuePoemLine("Hidden SIG nodes are withheld words. Find them to deepen SIGNAL.");
+    queuePoemLine("A room. Objects that have been waiting.");
+    queuePoemLine("Move through it. Touch what draws you. The order will become a poem.");
+    queuePoemLine("Some things are hidden. Finding them deepens what the room can say.");
     if (isTouchInput()) {
-      queuePoemLine("Drag to move. Tap INTERACT to touch objects. Tap PING DOOR to locate it.");
+      queuePoemLine("Drag to move. Tap INTERACT when you are close. Tap PING DOOR to find the exit.");
     } else {
-      queuePoemLine("Controls: WASD or arrows move. E interact. Q ping door. X close. R restart.");
+      queuePoemLine("Move with WASD or arrows. E to touch something. Q to find the door. R to begin again.");
     }
   }
 
@@ -1590,9 +1613,9 @@ function resetRun(startInMenu = false) {
 
 function beginWritingFromMenu() {
   resetRun(false);
-  queuePoemLine("The room is not ready.");
-  queuePoemLine("It is building itself from what you expect.");
-  queuePoemLine("Step inside. Notice something before it notices you back.");
+  queuePoemLine("The room is arranging itself.");
+  queuePoemLine("It does not know what you will notice. That is the point.");
+  queuePoemLine("Begin when you are ready. Or before.");
 }
 
 function setCommonsReadOnly(isReadOnly) {
@@ -1620,7 +1643,7 @@ function openPoetryCommonsFromMenu() {
 
   stopTTS();
 
-  finalPoemTitle = "POETRY COMMONS";
+  finalPoemTitle = "SHARED POEMS";
   finalPoemText = "";
 
   if (finalTitleEl) finalTitleEl.textContent = finalPoemTitle;
@@ -1663,7 +1686,7 @@ function drawBootScreen() {
   textAlign(LEFT, TOP);
   fill(255, 70, 70);
   textSize(30 * S);
-  text("THE POEM ROOM", 48 * S, 56 * S);
+  text("A SMALL LOOP LEAKS", 48 * S, 56 * S);
 
   fill(170, 255, 210);
   textSize(20 * S);
@@ -1716,12 +1739,12 @@ function drawMenuScreen() {
   // TITLE
   fill(255, 60, 60);
   textSize(48 * S);
-  text("THE POEM ROOM", centerX, centerY);
+  text("A SMALL LOOP LEAKS", centerX, centerY);
 
-  // SUBTITLE (perfectly spaced under it)
+  // SUBTITLE
   fill(255, 150, 150);
   textSize(20 * S);
-  text("you are not the author alone", centerX, centerY + 36 * S);
+  text("a room, some objects, and whatever you bring", centerX, centerY + 36 * S);
 
   textAlign(LEFT, CENTER);
   textSize(26 * S);
@@ -1850,17 +1873,17 @@ function drawCreditsScreen() {
 function handleMenuSelection() {
   const choice = MENU_OPTIONS[menuIndex];
 
-  if (choice === "BEGIN WRITING") {
+  if (choice === "ENTER THE ROOM") {
     beginWritingFromMenu();
     return;
   }
 
-  if (choice === "POETRY COMMONS") {
+  if (choice === "SHARED POEMS") {
     openPoetryCommonsFromMenu();
     return;
   }
 
-  if (choice === "CREDITS") {
+  if (choice === "COLOPHON") {
     creditsIndex = 0;
     creditsCharIndex = 0;
     creditsTimer = millis();
@@ -2862,8 +2885,8 @@ function drawActBanner() {
 
   const title = (act === 3) ? "ACT 3" : ((act === 2) ? "ACT 2" : "ACT 1");
   const sub = (act === 3)
-    ? (act3Theme ? act3Theme.bannerSub : "THE POEM WRITES YOU BACK")
-    : ((act === 2) ? "THE MACHINE NOTICES YOU" : "THE ROOM SPEAKS");
+    ? (act3Theme ? act3Theme.bannerSub : "THE ROOM RETURNS WHAT YOU GAVE IT")
+    : ((act === 2) ? "SOMETHING HERE HAS BEEN LISTENING" : "A ROOM FULL OF SMALL LANGUAGES");
 
   textAlign(CENTER, CENTER);
 
@@ -3299,7 +3322,7 @@ function keyPressed() {
   ------------------------- */
   if (showFinalModal) {
     if (key === "x" || key === "X") {
-      closeFinalModal(finalPoemTitle === "POETRY COMMONS");
+      closeFinalModal(finalPoemTitle === "SHARED POEMS");
       return false;
     }
 
@@ -3315,7 +3338,7 @@ function keyPressed() {
     }
 
     if (key === " " || keyCode === 32) {
-      if (finalPoemTitle === "POETRY COMMONS") {
+      if (finalPoemTitle === "SHARED POEMS") {
         speakPoetryCommons();
       } else if (!finalTW.done) {
         // Still typing -- skip to end first
@@ -3667,7 +3690,7 @@ function bindLeaderboardUI() {
     refreshBoardBtnEl.addEventListener("keydown", (e) => {
       if (
         showFinalModal &&
-        finalPoemTitle === "POETRY COMMONS" &&
+        finalPoemTitle === "SHARED POEMS" &&
         (e.key === " " || e.code === "Space")
       ) {
         e.preventDefault();
@@ -3713,7 +3736,7 @@ function setPoetryCommonsEnabled(enabled) {
   if (refreshBoardBtnEl) refreshBoardBtnEl.disabled = !enabled;
 
   if (leaderboardStatusEl && !enabled) {
-    leaderboardStatusEl.textContent = "Listen to the poem first. Poetry Commons will open when the reading ends.";
+    leaderboardStatusEl.textContent = "The poem is being read aloud. Shared Poems will open when it finishes.";
   }
 }
 
@@ -3804,8 +3827,8 @@ function renderLeaderboard() {
   if (!leaderboardListEl) return;
 
   if (!isLeaderboardEnabled()) {
-    setLeaderboardStatus("Poetry Commons is offline until a sharing endpoint is configured.");
-    leaderboardListEl.innerHTML = '<div class="leaderboard-empty">Poetry Commons is offline right now. Add LEADERBOARD_CONFIG.endpoint to turn on shared poems.</div>';
+    setLeaderboardStatus("Shared Poems is offline — no sharing endpoint configured.");
+    leaderboardListEl.innerHTML = '<div class="leaderboard-empty">Shared Poems is currently offline.</div>';
     setLeaderboardBusy(false);
     return;
   }
@@ -3855,7 +3878,7 @@ function loadLeaderboardJSONP(limit = 20) {
       console.error("JSONP failed for:", script.src);
       delete window[callbackName];
       script.remove();
-      reject(new Error("Poetry Commons request failed."));
+      reject(new Error("Could not reach the shared poems collection."));
     };
 
     document.body.appendChild(script);
@@ -3902,13 +3925,13 @@ function submitPoemViaForm(payload) {
 async function refreshLeaderboard() {
   if (!isLeaderboardEnabled()) {
     leaderboardEntries = normalizePoetryRows(getLocalPoetryEntries());
-    setLeaderboardStatus("Poetry Commons is running in local mode.");
+    setLeaderboardStatus("Shared Poems is saving to this browser.");
     renderLeaderboard();
     return;
   }
 
   setLeaderboardBusy(true);
-  setLeaderboardStatus("Loading Poetry Commons...");
+  setLeaderboardStatus("Loading shared poems...");
 
   try {
     const data = await loadLeaderboardJSONP(LEADERBOARD_CONFIG.maxEntries);
@@ -3919,15 +3942,15 @@ async function refreshLeaderboard() {
     leaderboardEntries = normalizePoetryRows(rows);
     saveLocalPoetryEntries(leaderboardEntries);
 
-    setLeaderboardStatus("Poetry Commons is live.");
+    setLeaderboardStatus("Shared Poems is open.");
     renderLeaderboard();
   } catch (err) {
     console.error(err);
     leaderboardEntries = normalizePoetryRows(getLocalPoetryEntries());
     if (leaderboardEntries.length) {
-      setLeaderboardStatus("Using locally cached poems while Poetry Commons reconnects.");
+      setLeaderboardStatus("Using locally saved poems while reconnecting.");
     } else {
-      setLeaderboardStatus("Could not load Poetry Commons right now. Local sharing is still available in this browser.");
+      setLeaderboardStatus("Could not reach the shared poems right now. Local saving is still available.");
     }
     renderLeaderboard();
   } finally {
@@ -3942,7 +3965,7 @@ async function submitCurrentPoemToLeaderboard() {
   const payload = buildLeaderboardPayload();
 
   if (!payload.text.length) {
-    setLeaderboardStatus("Finish a poem before sharing it.");
+    setLeaderboardStatus("Walk through the room first.");
     return;
   }
 
@@ -3957,23 +3980,23 @@ async function submitCurrentPoemToLeaderboard() {
   }
 
   setLeaderboardBusy(true);
-  setLeaderboardStatus("Sharing your poem...");
+  setLeaderboardStatus("Sending your poem...");
 
   try {
     const result = await submitPoemViaForm(payload);
 
     if (!result.ok) {
-      throw new Error("Poetry Commons submit failed.");
+      throw new Error("Poem share failed.");
     }
 
-    setLeaderboardStatus("Poem shared to Poetry Commons.");
+    setLeaderboardStatus("Your poem is now in the shared collection.");
 
     setTimeout(() => {
       refreshLeaderboard();
     }, 1600);
   } catch (err) {
     console.error(err);
-    setLeaderboardStatus("Saved locally. Remote Poetry Commons share did not complete.");
+    setLeaderboardStatus("Saved here. The remote share did not complete.");
   } finally {
     setLeaderboardBusy(false);
   }
@@ -4379,23 +4402,23 @@ function rebuildPoemDisplay() {
 
   if (mode === "boot") {
     promptEl.innerHTML = [
-      `<div class="act-title">INITIALIZING</div>`,
-      `<div class="act-sub">Preparing the room for an observer.</div>`,
-      `<div class="act-signal">Please wait.</div>`
+      `<div class="act-title">WAKING</div>`,
+      `<div class="act-sub">The room is assembling itself.</div>`,
+      `<div class="act-signal">This will only take a moment.</div>`
     ].join("");
 
-    poemEl.innerHTML = `<span class="typing-line">${esc("Booting poetic interface")}<span class="cursor">█</span></span>`;
+    poemEl.innerHTML = `<span class="typing-line">${esc("finding the light in the room")}<span class="cursor">█</span></span>`;
     return;
   }
 
   if (mode === "menu") {
     promptEl.innerHTML = [
       `<div class="act-left">`,
-        `<div class="act-title">MAIN MENU</div>`,
+        `<div class="act-title">A SMALL LOOP LEAKS</div>`,
       `</div>`,
       `<div class="act-right">`,
         `<div class="act-signal">${esc(MENU_LORE[menuLoreIndex])}</div>`,
-        `<div class="act-sub">Choose how you want to enter the system.</div>`,
+        `<div class="act-sub">Choose where to begin.</div>`,
       `</div>`
     ].join("");
 
@@ -4406,11 +4429,11 @@ function rebuildPoemDisplay() {
   if (mode === "credits") {
     promptEl.innerHTML = [
       `<div class="act-left">`,
-        `<div class="act-title">CREDITS</div>`,
+        `<div class="act-title">COLOPHON</div>`,
       `</div>`,
       `<div class="act-right">`,
-        `<div class="act-signal">A record of observers, systems, and leaks.</div>`,
-        `<div class="act-sub">X returns to the menu.</div>`,
+        `<div class="act-signal">What was made, and by whom, and with what help.</div>`,
+        `<div class="act-sub">X returns to the beginning.</div>`,
       `</div>`
     ].join("");
 
@@ -4570,8 +4593,8 @@ function updateControlsPanel() {
 
   if (mode === "boot") {
     controlsContentEl.innerHTML = [
-      `<div><span class="control-label">Status:</span> Initializing observer</div>`,
-      `<div><span class="control-label">Please Wait:</span> The room is assembling</div>`
+      `<div><span class="control-label">Status:</span> The room is assembling</div>`,
+      `<div><span class="control-label">Please Wait:</span> This will only take a moment</div>`
     ].join("");
     return;
   }
@@ -4583,8 +4606,7 @@ function updateControlsPanel() {
         ].join("")
       : [
           `<div><span class="control-label">Move:</span> ↑ ↓ or W / S</div>`,
-          `<div><span class="control-label">Select:</span> Enter or Space</div>`,
-          `<div><span class="control-label">Leave Screen:</span> X</div>`
+          `<div><span class="control-label">Select:</span> Enter or Space</div>`
         ].join("");
     return;
   }
@@ -4593,14 +4615,13 @@ function updateControlsPanel() {
     controlsContentEl.innerHTML = touch
       ? [`<div><span class="control-label">Return:</span> Tap anywhere</div>`].join("")
       : [
-          `<div><span class="control-label">Return:</span> X</div>`,
-          `<div><span class="control-label">Also Return:</span> E or Space</div>`
+          `<div><span class="control-label">Return:</span> X or Space</div>`
         ].join("");
     return;
   }
 
   if (showFinalModal) {
-    const commonsMode = finalPoemTitle === "POETRY COMMONS";
+    const commonsMode = finalPoemTitle === "SHARED POEMS";
     if (touch) {
       controlsContentEl.innerHTML = commonsMode
         ? [
@@ -4704,27 +4725,27 @@ function updateUI() {
 
   const actTitle = (act === 3) ? "ACT 3" : ((act === 2) ? "ACT 2" : "ACT 1");
   const signalLine = (signal > 0)
-    ? ("SIGNAL " + signal + "/6: withheld words unlocked.")
-    : "No SIGNAL yet: SIG nodes are withheld words.";
+    ? ("RESONANCE " + signal + "/6 — hidden things have opened.")
+    : "Nothing hidden yet. Some things only appear when you are close.";
 
   let subtitle = "";
 
   if (showFinalModal) {
     subtitle = isTouchInput()
-      ? "Tap X to close. Tap restart for a new poem."
-      : "Final poem. X closes. R restarts. Space speaks.";
+      ? "Your poem. Tap X to close. Tap restart to begin again."
+      : "Your poem. X closes. R begins again. Space reads aloud.";
   } else if (mode === "focus") {
     if (focusId === "door" && canFinalizePoem()) {
       subtitle = isTouchInput()
-        ? "Door ready. Tap SEAL POEM to finish."
-        : "Door ready. Press E to seal. Mouse wheel zoom.";
+        ? "The door is ready. Tap SEAL POEM to finish."
+        : "The door is ready. Press E to seal the poem.";
     } else {
       subtitle = isTouchInput()
-        ? "Focus View. Tap + / − to zoom. Tap CLOSE to exit."
-        : "Focus View. Mouse Wheel Zoom. E Closes. Q Pings Door.";
+        ? "Looking closely. Tap + / − to zoom. Tap CLOSE to step back."
+        : "Looking closely. Mouse wheel to zoom. E steps back. Q finds the door.";
     }
   } else if (paused) {
-    subtitle = "Paused. E returns. R restarts.";
+    subtitle = "Paused. E to continue. R to begin again.";
   } else {
     const nonDoorCount = history.filter(h => h !== "door").length;
     const need = Math.max(0, 2 - nonDoorCount);
@@ -4733,27 +4754,27 @@ function updateUI() {
 
     if (act === 1) {
       if (inRange && need > 0 && near.s && near.s.id === "door") {
-        subtitle = "The door wants more. Find " + need + " more object(s).";
+        subtitle = "The door is not ready for you yet. Touch " + need + " more thing" + (need > 1 ? "s" : "") + " first.";
         promptEl.classList.add("urgent");
       } else if (need > 0) {
-        subtitle = "Explore. Find " + need + " more object(s). Hidden SIG nodes deepen SIGNAL.";
+        subtitle = "Touch " + need + " more thing" + (need > 1 ? "s" : "") + ". Some objects are hidden. Being close reveals them.";
         promptEl.classList.add("urgent");
       } else if (!history.includes("door")) {
         subtitle = isTouchInput()
-          ? "You have enough lines. Find the door. Tap PING DOOR to locate it."
-          : "You have enough lines. Find the door. Press Q to ping it.";
+          ? "You have enough. Find the door. Tap PING DOOR to locate it."
+          : "You have enough. Find the door. Q sends a pulse toward it.";
       } else {
         subtitle = isTouchInput()
-          ? "Return to the door. Walk up and tap INTERACT to continue."
-          : "Return to the door. View it and press E to continue.";
+          ? "The door is near. Walk to it and tap INTERACT."
+          : "The door is near. Press E when you reach it.";
       }
     } else if (act === 2) {
       const needSig = Math.max(0, 2 - act2SigCollected);
       if (!act2Calibrated) {
         const nextId = getNextCalibrationId();
-        subtitle = "Set the sequence: " + formatSequence(act2TargetSeq) + ". Next: " + formatItemName(nextId) + ". Then find " + needSig + " SIG.";
+        subtitle = "Touch in this order: " + formatSequence(act2TargetSeq) + ". Next: " + formatItemName(nextId) + ". Then find " + needSig + " hidden thing" + (needSig !== 1 ? "s" : "") + ".";
       } else {
-        subtitle = "Calibration complete. Find " + needSig + " SIG, then return to the door.";
+        subtitle = "The sequence is set. Find " + needSig + " more hidden thing" + (needSig !== 1 ? "s" : "") + ", then return to the door.";
       }
       if (!act2Calibrated || needSig > 0) promptEl.classList.add("urgent");
     } else {
