@@ -110,7 +110,8 @@ body{
   display:flex;
   flex-direction:column;
   justify-content:flex-start;
-  min-width:max-content;
+  min-width:0;
+  flex-shrink:0;
 }
 
 .prompt .act-right{
@@ -629,6 +630,60 @@ body::after{
   0%{ opacity:1; }
   50%{ opacity:.96; }
   100%{ opacity:1; }
+}
+
+/* =========================
+   INTERMEDIATE: itch.io embed width and similar constrained desktops
+========================= */
+@media (max-width: 1100px) {
+  .hud-top {
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 0.6fr);
+  }
+
+  .prompt .act-title {
+    font-size: 38px;
+  }
+
+  .prompt .act-signal,
+  .prompt .act-sub {
+    font-size: 18px;
+  }
+
+  .prompt {
+    gap: 14px;
+  }
+
+  .panel-title {
+    font-size: 28px;
+  }
+
+  .howto-p {
+    font-size: 14px;
+  }
+
+  .controls-box,
+  .howto-box {
+    padding: 8px 10px;
+  }
+}
+
+/* At very constrained widths before the full mobile flip,
+   collapse the prompt to a single column so it doesn't squeeze */
+@media (max-width: 960px) {
+  .prompt {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .prompt .act-title {
+    font-size: 30px;
+  }
+
+  .prompt .act-signal,
+  .prompt .act-sub {
+    font-size: 16px;
+  }
 }
 
 /* =========================
