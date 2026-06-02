@@ -62,7 +62,7 @@ let controlsContentEl = null;
 ========================= */
 let world = { w: 2800, h: 1900, pad: 180 };
 let camera = { x: 0, y: 0 };
-let player = { x: 0, y: 0, r: 10, speed: 2.6, vx: 0, vy: 0, speed01: 0, energy: 0 };
+let player = { x: 0, y: 0, r: 10, speed: 5.4, vx: 0, vy: 0, speed01: 0, energy: 0 };
 
 // Touch movement (mobile): a simple virtual joystick bound to the first touch
 let touchMove = {
@@ -610,7 +610,7 @@ let actTW = {
 };
 
 const LEADERBOARD_CONFIG = {
-  endpoint: "https://script.google.com/macros/s/AKfycbw9M02gUSnCAQOs2uAT87LSzqGR23vAlbamKKwzMBV9kp-mUnVwoayz5IHJLqiHv8mx5A/exec",
+  endpoint: "https://script.google.com/macros/s/AKfycbyWQYfOfYrcC48btHBzlctO99TNsEtXSa3ui_XHFYCS95XeFuHSQV6L2z1erXk3q81P0A/exec",
   maxEntries: 20,
   maxPoemChars: 900
 };
@@ -1254,7 +1254,7 @@ function computeCanvasSize() {
 
   INTERACT_RADIUS = 92 * S;
   player.r = 10 * S;
-  player.speed = 2.7 * S;
+  player.speed = 5.4 * S;   // pixels per frame at 30fps (was 2.7 at 60fps)
 }
 
 /* ==========================================================
@@ -2469,26 +2469,24 @@ function drawTouchJoystick() {
 
 
 function getInteractButtonRect() {
-  // Scale button size with canvas so it's always comfortable on any phone
-  const btnH = Math.max(52, Math.round(CH * 0.10));
-  const btnW = Math.max(160, Math.round(CW * 0.22));
-  const margin = Math.max(14, Math.round(CW * 0.025));
+  const btnH   = Math.max(44, Math.round(CH * 0.09));
+  const btnW   = Math.max(140, Math.round(CW * 0.20));
+  const margin = Math.max(10, Math.round(CH * 0.025)); // margin relative to CH so buttons stay visible
   return {
-    x: CW - btnW - margin,
-    y: CH - btnH - margin,
+    x: CW - btnW - Math.max(10, Math.round(CW * 0.018)),
+    y: Math.min(CH - btnH - margin, CH - btnH - 8), // never clip below canvas
     w: btnW,
     h: btnH
   };
 }
 
 function getQPingButtonRect() {
-  // "PING DOOR (Q)" button — sits to the left of the interact button
-  const btnH = Math.max(52, Math.round(CH * 0.10));
-  const btnW = Math.max(130, Math.round(CW * 0.18));
-  const margin = Math.max(14, Math.round(CW * 0.025));
+  const btnH      = Math.max(44, Math.round(CH * 0.09));
+  const btnW      = Math.max(110, Math.round(CW * 0.16));
   const interactR = getInteractButtonRect();
+  const gap       = Math.max(8, Math.round(CW * 0.012));
   return {
-    x: interactR.x - btnW - Math.max(10, Math.round(CW * 0.015)),
+    x: interactR.x - btnW - gap,
     y: interactR.y,
     w: btnW,
     h: btnH
@@ -5663,3 +5661,9 @@ function musicAccent() {
 /* ==========================================================
    FOOTSTEPS - removed placeholder (was a no-op called every frame)
 ========================================================== */
+
+// Startup layout fix for prompt buttons/UI that only appear after resize.
+setTimeout(() => {
+  try { window.dispatchEvent(new Event('resize')); } catch(e) {}
+}, 250);
+
